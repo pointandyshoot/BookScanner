@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "books": [
+    {"id":"example-eon","title":"Eon","author":"Greg Bear","aliases":[],"enabled":true},
+    {"id":"example-french","title":"*","author":"Jackie French","aliases":[],"enabled":true},
+    {"id":"example-series","title":"The No. 1 Ladies*","author":"Alexander McCall Smith","aliases":["No 1 Ladies*"],"enabled":true}
+  ]
+}
