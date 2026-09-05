@@ -30,10 +30,9 @@ final class ScanEngine implements ImageAnalysis.Analyzer {
     private volatile boolean enabled=false, spineMode=false;
     private volatile int thermal=0;
     private long lastFrame=0, frame=0;
-    private int rotationIndex=0, preferred=90, emptyFrames=0;
-    private boolean hadMatch=false;
+    private int emptyFrames=0, activeGeneration=-1;
+    private final OrientationSchedule orientations=new OrientationSchedule();
     private double averageMs=180;
-    private static final int[] ROTATIONS={90,180,270,0};
 
     ScanEngine(Listener listener) {this.listener=listener;}
     void setBooks(List<WantedBook> entries) {books=List.copyOf(entries);invalidate();}
@@ -51,12 +50,13 @@ final class ScanEngine implements ImageAnalysis.Analyzer {
         try {
             long interval=thermal>=3?700:(long)Math.max(140,Math.min(550,averageMs*1.1));
             if(!enabled || books.stream().noneMatch(b->b.enabled) || start-lastFrame<interval) return;
+            if(activeGeneration!=token){orientations.reset();emptyFrames=0;activeGeneration=token;}
             lastFrame=start;frame++;
             upright=ImagePrep.uprightLuma(image);
             int w=upright.getWidth(),h=upright.getHeight();
             // Reuse a productive angle twice, but probe another every third frame so
             // mixed shelves and a newly encountered spine orientation are never starved.
-            int angle=hadMatch && frame%3!=0?preferred:ROTATIONS[rotationIndex++%4];
+            int angle=orientations.next();
             boolean enhanced=emptyFrames>=4 && frame%2==0 && thermal<3;
             List<Rect> regions=spineMode && frame%3!=0?ImagePrep.spineBands(upright):List.of();
             if(regions.isEmpty()) regions=List.of(new Rect(0,0,w,h));
@@ -65,8 +65,8 @@ final class ScanEngine implements ImageAnalysis.Analyzer {
                 if(!enabled || token!=generation.get()) return;
                 readRegion(upright,region,angle,enhanced,start,hits);
             }
-            hadMatch=!hits.isEmpty();
-            if(hadMatch) {preferred=angle;emptyFrames=0;} else emptyFrames++;
+            orientations.result(angle,!hits.isEmpty());
+            if(!hits.isEmpty()) emptyFrames=0; else emptyFrames++;
             long elapsed=SystemClock.elapsedRealtime()-start;
             averageMs=.8*averageMs+.2*elapsed;
             // Suppress results from a previous session or a frame too old to point at safely.

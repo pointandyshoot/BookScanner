@@ -54,7 +54,7 @@ Windows: use `gradlew.bat`. The Gradle 8.13 wrapper is included; Android Gradle 
 
 ## Privacy and storage
 
-Only the wanted list and the spine-cropping option persist locally. Camera frames and recognition results remain in memory and are discarded. No internet permission, analytics, accounts, microphone, GPS, media-library or vibration permission. Network permissions from dependency manifests are explicitly removed. Automatic Android backup is disabled; export a wanted-list backup before uninstalling. The document provider you choose for manual export may itself be cloud-backed.
+Only the wanted list, spine-cropping option and camera-permission prompt state persist locally. Camera frames and recognition results remain in memory and are discarded. No internet permission, analytics, accounts, microphone, GPS, media-library or vibration permission. Network permissions from dependency manifests are explicitly removed. Automatic Android backup is disabled; export a wanted-list backup before uninstalling. The document provider you choose for manual export may itself be cloud-backed.
 
 ## Documentation
 

@@ -73,11 +73,11 @@ public final class MainActivity extends ComponentActivity {
         getOnBackPressedDispatcher().addCallback(this,new OnBackPressedCallback(true){
             @Override public void handleOnBackPressed(){if(listScreen)showScanner();else finish();}
         });
-        if(state!=null){paused=state.getBoolean("paused");pendingExport=state.getString("export");}
+        if(state!=null){paused=state.getBoolean("paused");}
         if(state!=null && state.getBoolean("list"))showList();else showScanner();
     }
     @Override protected void onSaveInstanceState(Bundle out){
-        out.putBoolean("paused",paused);out.putBoolean("list",listScreen);out.putString("export",pendingExport);
+        out.putBoolean("paused",paused);out.putBoolean("list",listScreen);
         super.onSaveInstanceState(out);
     }
     private int dp(int n){return Math.round(n*getResources().getDisplayMetrics().density);}
@@ -140,7 +140,9 @@ public final class MainActivity extends ComponentActivity {
     private void startCamera(){
         if(destroyed||listScreen||!resumed||preview==null)return;
         if(ContextCompat.checkSelfPermission(this,Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED){
-            permission.launch(Manifest.permission.CAMERA);return;
+            if(getPreferences(0).getBoolean("cameraAsked",false))showPermissionHelp();
+            else {getPreferences(0).edit().putBoolean("cameraAsked",true).apply();permission.launch(Manifest.permission.CAMERA);}
+            return;
         }
         if(preview.getWidth()==0){preview.post(this::startCamera);return;}
         int token=++cameraGeneration;
@@ -258,8 +260,10 @@ public final class MainActivity extends ComponentActivity {
     }
     private void exportList(Uri uri){
         if(uri==null)return;
-        String data=pendingExport;
-        if(data==null){message("Export interrupted. Please try again.");return;}
+        final String data;
+        try { data=pendingExport!=null?pendingExport:WantedStore.encode(books); }
+        catch(Exception e){message("Export interrupted. Please try again.");return;}
+        pendingExport=null;
         fileExecutor.execute(()->{
             try(OutputStream output=getContentResolver().openOutputStream(uri,"wt")){
                 if(output==null)throw new IOException("Couldn’t write file");output.write(data.getBytes(StandardCharsets.UTF_8));
