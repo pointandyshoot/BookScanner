@@ -2,7 +2,7 @@ package au.id.pointandyshoot.bookscanner.core;
 
 import java.util.*;
 
-/** Alert once per wanted entry, re-arming after genuine absence rather than every OCR read. */
+/** Alert once per visual track, re-arming after genuine absence rather than every OCR read. */
 public final class AppearanceGate {
     public static final long ABSENCE_MS = 1500;
     private final Map<String, Long> lastVisible = new HashMap<>();

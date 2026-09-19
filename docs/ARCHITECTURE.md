@@ -26,7 +26,7 @@ A bounded three-second / 60-step camera-motion history maps late OCR polygons fo
 
 ## Appearance signalling
 
-`AppearanceGate` observes currently displayed wanted-entry IDs. It emits on first appearance and after at least 1.5 seconds without visibility. The one-second tracking grace prevents a single bad frame from removing an entry. Rereads, aliases and multiple regions matching one author wildcard share the same entry identity. Thus a wildcard alerts once while any corresponding track remains visible, rather than once per physical copy. Different wanted entries remain independent. UI pulses coalesce within 500 ms and use Android's gentle `EFFECT_TICK`, respecting touch-vibration attributes. Options persist the user's choice.
+`AppearanceGate` observes stable visual-track IDs. It emits on first appearance and after at least 1.5 seconds without visibility. The one-second tracking grace prevents a single bad frame from removing an entry. Overlapping rereads and aliases associate with the existing track. Distinct visual regions remain independent even when they match the same author wildcard. Recently lost tracks can recover their identity for 1.5 seconds to suppress a buzz from brief tracking failure; confirmed out-of-view tracks do not retain that identity. Identity is visual, not an ISBN or guaranteed whole-book identity. UI pulses coalesce within 500 ms and use Android's gentle `EFFECT_TICK`, respecting touch-vibration attributes. Options persist the user's choice.
 
 ## Lifecycle, privacy and limits
 

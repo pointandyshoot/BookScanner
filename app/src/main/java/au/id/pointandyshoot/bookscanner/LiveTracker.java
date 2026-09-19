@@ -15,12 +15,16 @@ final class LiveTracker implements AutoCloseable {
         Detection(String id,String label,String reason,float[] quad){this.id=id;this.label=label;this.reason=reason;this.quad=quad.clone();}
     }
     static final class Visible {
-        final Detection detection;final boolean repeated,tracking;
-        Visible(Detection d,boolean repeated,boolean tracking){detection=d;this.repeated=repeated;this.tracking=tracking;}
+        final Detection detection;final boolean repeated,tracking;final String appearanceId;
+        Visible(Detection d,boolean repeated,boolean tracking,String appearanceId){detection=d;this.repeated=repeated;this.tracking=tracking;this.appearanceId=appearanceId;}
     }
     private static final class Track {
-        Detection detection;float[] quad;Mat template;long lastGood,lastRead,lastReadSequence;int reads=1;
+        Detection detection;float[] quad;Mat template;long lastGood,lastRead,lastReadSequence;int reads=1;String appearanceId;
         Track(Detection d,float[] q,Mat t,long now,long seq){detection=d;quad=q;template=t;lastGood=lastRead=now;lastReadSequence=seq;}
+    }
+    private static final class Lost {
+        final String entry,key;final float[] quad;final long at;
+        Lost(Track t,long at){entry=t.detection.id;key=t.appearanceId;quad=t.quad.clone();this.at=at;}
     }
     private static final class Step {
         final long from,to,time;final double[] matrix;
@@ -30,6 +34,8 @@ final class LiveTracker implements AutoCloseable {
         final List<Point> from=new ArrayList<>(),to=new ArrayList<>();
     }
     private final List<Track> tracks=new ArrayList<>();
+    private final List<Lost> recentlyLost=new ArrayList<>();
+    private long nextAppearance=0;
     private final Deque<Step> history=new ArrayDeque<>();
     private Mat previous;
     private long sequence,now;
@@ -41,6 +47,7 @@ final class LiveTracker implements AutoCloseable {
             if(previous!=null&&(previous.cols()!=next.cols()||previous.rows()!=next.rows()
                     ||sourceWidth!=image.sourceWidth||sourceHeight!=image.sourceHeight))clear();
             sourceWidth=image.sourceWidth;sourceHeight=image.sourceHeight;now=time;
+            recentlyLost.removeIf(l->time-l.at>1500);
             if(previous!=null){
                 Flow flow=flow(previous,next);double[] global=fit(flow.from,flow.to);
                 if(global==null){Mat difference=new Mat();try{Core.absdiff(previous,next,difference);
@@ -59,7 +66,7 @@ final class LiveTracker implements AutoCloseable {
                         if(correlation>=(local==null?.68:.52))t.lastGood=time;
                         t.quad=candidate;
                     }
-                    if(time-t.lastGood>GRACE_MS){t.template.release();iterator.remove();}
+                    if(time-t.lastGood>GRACE_MS){recentlyLost.add(new Lost(t,time));t.template.release();iterator.remove();}
                 }
             }
             if(previous!=null)previous.release();previous=next;next=null;sequence=seq;
@@ -84,7 +91,11 @@ final class LiveTracker implements AutoCloseable {
                     existing.lastRead=capturedAt;existing.lastReadSequence=captureSequence;
                     if(!d.reason.startsWith("Author only")||existing.detection.reason.startsWith("Author only"))existing.detection=d;
                 }else if(tracks.size()<12){
-                    tracks.add(new Track(d,q,template,now,captureSequence));
+                    Track added=new Track(d,q,template,now,captureSequence);
+                    added.appearanceId="track-"+(++nextAppearance);
+                    Iterator<Lost> lost=recentlyLost.iterator();
+                    while(lost.hasNext()) {Lost old=lost.next();if(old.entry.equals(d.id)&&Geometry.overlap(bounds(old.quad),bounds(q))>.2){added.appearanceId=old.key;lost.remove();break;}}
+                    tracks.add(added);
                 }else template.release();
             }
         }finally{reference.release();}
@@ -92,7 +103,7 @@ final class LiveTracker implements AutoCloseable {
     List<Visible> visible(){
         if(previous==null)return List.of();List<Visible> result=new ArrayList<>();
         for(Track t:tracks)result.add(new Visible(new Detection(t.detection.id,t.detection.label,t.detection.reason,
-                scale(t.quad,(float)sourceWidth/previous.cols(),(float)sourceHeight/previous.rows())),t.reads>1,now-t.lastGood<150));
+                scale(t.quad,(float)sourceWidth/previous.cols(),(float)sourceHeight/previous.rows())),t.reads>1,now-t.lastGood<150,t.appearanceId));
         return result;
     }
     float[] recheckRegion(){
@@ -167,6 +178,6 @@ final class LiveTracker implements AutoCloseable {
             Imgproc.matchTemplate(candidate,reference,score,Imgproc.TM_CCOEFF_NORMED);return score.get(0,0)[0];
         }finally{candidate.release();score.release();mean.release();std.release();}
     }
-    void clear(){for(Track t:tracks)t.template.release();tracks.clear();history.clear();if(previous!=null){previous.release();previous=null;}}
+    void clear(){for(Track t:tracks)t.template.release();tracks.clear();recentlyLost.clear();history.clear();if(previous!=null){previous.release();previous=null;}}
     @Override public void close(){clear();}
 }

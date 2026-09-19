@@ -54,6 +54,16 @@ public class LiveTrackerTest {
             assertTrue(tracker.visible().isEmpty());
         }finally{base.release();blank.release();}
     }
+    @Test public void separateBooksWithSameWantedEntryKeepSeparateStableIdentities(){
+        Mat base=shelf();try(LiveTracker tracker=new LiveTracker()){
+            VisionFrames.Gray first=gray(base);tracker.frame(first,1,0);
+            List<LiveTracker.Detection> two=List.of(detection().get(0),new LiveTracker.Detection("wanted","Same author","Author match",new float[]{20,330,130,330,130,400,20,400}));
+            tracker.detections(two,first,1,0);assertEquals(2,tracker.visible().size());
+            String a=tracker.visible().get(0).appearanceId,b=tracker.visible().get(1).appearanceId;
+            assertNotEquals(a,b);tracker.detections(two,first,1,0);
+            assertEquals(a,tracker.visible().get(0).appearanceId);assertEquals(b,tracker.visible().get(1).appearanceId);
+        }finally{base.release();}
+    }
     @Test public void oldResultsAndSessionResetCannotResurrectBoxes(){
         Mat base=shelf();try(LiveTracker tracker=new LiveTracker()){
             VisionFrames.Gray first=gray(base);tracker.frame(first,1,0);tracker.frame(first,2,4000);

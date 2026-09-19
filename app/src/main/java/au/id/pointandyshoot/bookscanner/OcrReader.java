@@ -38,12 +38,18 @@ final class OcrReader implements AutoCloseable {
         try{localLean=VisionFrames.lean(crop);}finally{if(crop!=upright)crop.recycle();}
         // Local tilt can differ from the shelf's dominant tilt. No assumption of right-angle text.
         float angle=Float.isFinite(localLean)&&Math.abs(localLean)>=3?angles[0]-localLean:angles[1];
-        hits.addAll(readAtAngle(upright,region,angle,1.5f,books));
+        hits.addAll(readAtAngle(upright,region,angle,1.5f,books,hits.isEmpty()&&step%2==0));
         if(valid.getAsBoolean())publish.accept(List.copyOf(hits));
     }
     List<LiveTracker.Detection> readAtAngle(Bitmap source,Rect region,float angle,float scale,List<WantedBook> books) throws Exception {
+        return readAtAngle(source,region,angle,scale,books,false);
+    }
+    private List<LiveTracker.Detection> readAtAngle(Bitmap source,Rect region,float angle,float scale,List<WantedBook> books,boolean enhance) throws Exception {
         try(ReadingImage input=new ReadingImage(source,region,angle,scale)){
-            Text text=Tasks.await(recognizer.process(InputImage.fromBitmap(input.bitmap,0)));
+            Bitmap recognised=enhance?ImagePrep.contrast(input.bitmap):input.bitmap;
+            Text text;
+            try{text=Tasks.await(recognizer.process(InputImage.fromBitmap(recognised,0)));}
+            finally{if(recognised!=input.bitmap)recognised.recycle();}
             List<LiveTracker.Detection> hits=new ArrayList<>();
             for(Text.TextBlock block:text.getTextBlocks()){
                 for(Text.Line line:block.getLines())add(line.getText(),line.getCornerPoints(),line.getBoundingBox(),input,books,hits);

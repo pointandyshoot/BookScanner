@@ -63,7 +63,7 @@ final class ScanEngine implements ImageAnalysis.Analyzer {
             Batch batch=pending.getAndSet(null);
             if(batch!=null&&batch.token==token)tracker.detections(batch.hits,batch.capture,batch.sequence,batch.time);
             List<Hit> hits=new ArrayList<>();Set<String> present=new HashSet<>();
-            for(LiveTracker.Visible v:tracker.visible()){hits.add(new Hit(v));present.add(v.detection.id);}
+            for(LiveTracker.Visible v:tracker.visible()){hits.add(new Hit(v));present.add(v.appearanceId);}
             boolean alert=appearance.update(present,now);
             if(enabled&&token==generation.get())listener.result(hits,gray.sourceWidth,gray.sourceHeight,now,
                     !hits.isEmpty()?"Potential match — tracking highlighted text":!lastError.isEmpty()?lastError:
