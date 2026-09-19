@@ -50,15 +50,17 @@ public final class MainActivity extends ComponentActivity {
     private ActivityResultLauncher<String[]> importFile;
     private ActivityResultLauncher<String> exportFile;
     private String pendingExport;
+    private long lastPulse=-1000;
 
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
         store=new WantedStore(this);
-        scanner=new ScanEngine((hits,w,h,time,message,generation)->runOnUiThread(()->{
+        scanner=new ScanEngine((hits,w,h,time,message,generation,newAppearance)->runOnUiThread(()->{
             if(destroyed || !resumed || listScreen || paused || generation!=scanner.generation())return;
             if(overlay!=null)overlay.update(hits,w,h,time);
             if(status!=null)status.setText(message);
-        }));
+            if(newAppearance)signalDetection();
+        }),scanExecutor);
         permission=registerForActivityResult(new ActivityResultContracts.RequestPermission(),granted->{
             if(granted)startCamera();else showPermissionHelp();
         });
@@ -133,7 +135,7 @@ public final class MainActivity extends ComponentActivity {
             }}
             public void onStartTrackingTouch(SeekBar b){} public void onStopTrackingTouch(SeekBar b){}
         });
-        root.addView(text("Amber: potential match • Green: read again\nTap the view to focus. Check highlighted books yourself.",12));
+        root.addView(text("Boxes follow detected text • Gentle buzz on arrival\nTap to focus. Check highlighted books yourself.",12));
         scanner.setBooks(books);scanner.setSpineMode(getPreferences(0).getBoolean("spines",false));
         if(resumed)preview.post(this::startCamera);
     }
@@ -154,7 +156,8 @@ public final class MainActivity extends ComponentActivity {
                 Preview cameraPreview=new Preview.Builder().setTargetRotation(preview.getDisplay().getRotation()).build();
                 cameraPreview.setSurfaceProvider(preview.getSurfaceProvider());
                 ResolutionSelector resolution=new ResolutionSelector.Builder()
-                        .setResolutionStrategy(new ResolutionStrategy(new Size(1280,960),ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER)).build();
+                        .setAllowedResolutionMode(ResolutionSelector.PREFER_HIGHER_RESOLUTION_OVER_CAPTURE_RATE)
+                        .setResolutionStrategy(new ResolutionStrategy(new Size(2560,1920),ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER)).build();
                 ImageAnalysis analysis=new ImageAnalysis.Builder().setResolutionSelector(resolution)
                         .setTargetRotation(preview.getDisplay().getRotation())
                         .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST).build();
@@ -190,12 +193,22 @@ public final class MainActivity extends ComponentActivity {
     private void options(){
         boolean current=getPreferences(0).getBoolean("spines",false);
         new AlertDialog.Builder(this).setTitle("Scanning options")
-                .setMultiChoiceItems(new String[]{"Experimental spine crops (may miss books)"},new boolean[]{current},(d,i,checked)->{
-                    getPreferences(0).edit().putBoolean("spines",checked).apply();scanner.setSpineMode(checked);overlay.clear();})
+                .setMultiChoiceItems(new String[]{"Gentle vibration on new detection","Experimental spine crops (may miss books)"},
+                        new boolean[]{getPreferences(0).getBoolean("haptics",true),current},(d,i,checked)->{
+                    if(i==0)getPreferences(0).edit().putBoolean("haptics",checked).apply();
+                    else {getPreferences(0).edit().putBoolean("spines",checked).apply();scanner.setSpineMode(checked);}})
                 .setPositiveButton("Done",null).setNeutralButton("About",(d,w)->new AlertDialog.Builder(this)
-                        .setTitle("BookScanner 0.1")
-                        .setMessage("Offline ML Kit text recognition. No photos, scan history or vibration.\n\nPreprocessing inspired by Sappelen/BookSpineScanner (CC0 1.0). Independently implemented for Android.\n\nGoogle ML Kit is governed by Google’s ML Kit terms. AndroidX: Apache 2.0. See repository notices for source links.")
+                        .setTitle("BookScanner 0.2")
+                        .setMessage("Offline ML Kit text recognition. Live visual tracking and optional detection vibration. No saved photos or scan history.\n\nPreprocessing inspired by Sappelen/BookSpineScanner (CC0 1.0). Independently implemented for Android.\n\nGoogle ML Kit is governed by Google’s ML Kit terms. AndroidX and OpenCV: Apache 2.0. See repository notices for source links.")
                         .setPositiveButton("Done",null).show()).show();
+    }
+    private void signalDetection(){
+        long now=SystemClock.elapsedRealtime();
+        if(!getPreferences(0).getBoolean("haptics",true)||now-lastPulse<500)return;
+        lastPulse=now;
+        Vibrator vibrator=getSystemService(VibratorManager.class).getDefaultVibrator();
+        if(vibrator.hasVibrator())vibrator.vibrate(VibrationEffect.createPredefined(VibrationEffect.EFFECT_TICK),
+                new VibrationAttributes.Builder().setUsage(VibrationAttributes.USAGE_TOUCH).build());
     }
     private void showList(){
         stopCamera();listScreen=true;installRoot();

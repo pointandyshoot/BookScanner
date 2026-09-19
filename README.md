@@ -1,8 +1,8 @@
 # BookScanner
 
-An offline Android wanted-book finder for op shops. Sweep the camera across a shelf; potential matches get a box in the live view. Built with Google ML Kit Text Recognition and CameraX, with the Pixel 10 as the first testing target.
+An offline Android wanted-book finder for op shops. Sweep the camera across a shelf; potential matches get a box in the live view. Built with Google ML Kit Text Recognition, CameraX and OpenCV, with the Pixel 10 as the first testing target.
 
-**Initial implementation — real-shelf accuracy and Pixel 10 performance still need device testing.** A box is a prompt to check a book yourself, not a confirmed identification.
+**Version 0.2 — real-shelf accuracy and Pixel 10 performance still need device testing.** A box is a prompt to check a book yourself, not a confirmed identification.
 
 ## Using the app
 
@@ -10,11 +10,15 @@ An offline Android wanted-book finder for op shops. Sweep the camera across a sh
 2. Add alternative titles in the aliases field. Title patterns support `*` (any text) and `?` (one character). For example, `Matilda*` matches visible title text starting with “Matilda”. The app cannot infer series membership when a series name is absent from the spine.
 3. Return to **Scan**, allow the camera and sweep slowly. Tap the camera view to focus; use the torch or zoom if needed.
 4. **Amber** boxes are potential matches. **Green** means the same entry was read again nearby in a later frame, not that its identity has been verified. “Check title” means only the author was recognised for a specific wanted book.
-5. Use **Pause** to pause recognition. The camera preview remains live; leaving the app or opening the wanted list releases the camera.
+5. A gentle tick announces a new detection; turn it off in **Options** if preferred. Use **Pause** to pause recognition. The camera preview remains live; leaving the app or opening the wanted list releases the camera.
 
-Keep text reasonably large in the view. Glare, ornate lettering, tightly stacked characters and fast movement can prevent recognition. Try a few books at a time. There is no vibration, saved photo, scan history or summary screen.
+Keep text reasonably large in the view. Glare, ornate lettering, tightly stacked characters and fast movement can prevent recognition. Try a few books at a time. There is no saved photo, scan history or summary screen. Outlines follow the detected text, not a guaranteed segmentation of the entire book.
 
 Wanted entries can be edited, disabled and deleted. **Import/Export** uses the Android document picker and the versioned JSON format in [the example list](docs/wanted-example.json). Import previews the entry count and asks before replacing the existing list. The example is not loaded automatically.
+
+## Upgrading from 0.1
+
+**Export your wanted list before replacing the installed APK.** GitHub builds currently use per-run debug keys, so Android may require uninstalling the old app before installing the new one. Reimport your exported JSON afterwards. Version 0.2 keeps the same list format. Builds from the same Android Studio installation normally share its local debug key.
 
 ## Install and build
 
@@ -41,20 +45,23 @@ Windows: use `gradlew.bat`. The Gradle 8.13 wrapper is included; Android Gradle 
 
 [Android build](https://github.com/pointandyshoot/BookScanner/actions/workflows/android.yml) tests, lints and builds the app on pushes and pull requests. Open a successful run and download **BookScanner-debug** under Artifacts, unzip it, then install `app-debug.apk` on the phone. GitHub sign-in is needed to download workflow artifacts. Android may ask you to allow installation from the app opening the APK. Each clean CI runner uses a new debug signing key; uninstall an older differently signed build before installing (export your wanted list first), or build consistently with Android Studio on your own computer.
 
-## Scanning choices
+## Version 0.2: detail reads, tilted text and live tracking
 
-- Bundled **ML Kit Latin Text Recognition 16.0.1**: no first-run model download or cloud OCR.
-- **CameraX 1.5.3**, rear camera, analysis resolution preference 1280 × 960, latest-frame backpressure and one OCR job at a time. Preview remains independent of analysis.
-- Correct camera sensor rotation first. Then probe **90°, 180°, 270°, 0°** across analysed frames. A productive orientation gets two frames out of three; the third keeps exploring all right angles. No arbitrary-angle brute force.
-- Direct luminance-plane conversion avoids YUV → JPEG → bitmap conversion. After four unmatched frames, alternate contrast-enhanced reads with raw reads. Mild percentile contrast stretch preserves grayscale detail; no aggressive thresholding.
-- Optional **experimental spine crops**: a lightweight vertical-edge heuristic runs before OCR and proposes narrow strips only when there are 2–4 plausible strips covering less than 60% of the image. Full-view checks run every third frame. **Off by default:** no shelf benchmark yet proves a net accuracy or speed benefit. It can miss leaning or horizontal books.
-- Matching uses local lines and compact text blocks, normalises punctuation/diacritics and tolerates modest OCR errors in longer titles. Very short titles need an exact whole-word read. Fuzzy author-only evidence is explicitly labelled as such for specific books.
-- Repeated-frame evidence uses entry identity and overlapping geometry within 900 ms. No cross-frame text stitching, image registration or stored frames. Boxes come from the current analysed image and expire within 750 ms of analysis start; results taking over 700 ms are discarded.
-- Adaptive processing intervals respond to measured workload and Android thermal status. No claimed Tensor G5/NPU acceleration: the public ML Kit recogniser does not expose a delegate selection API. These are conservative starting settings, not measured Pixel 10 benchmarks.
+- Analysis now requests **2560 × 1920**, using a supported nearby camera size when unavailable. The preview and analysis still share a viewport.
+- Full-view OCR is followed by a **native-resolution overlapping detail crop**, enlarged for recognition. Four overlapping tiles are revisited with different orientations; existing tracks also receive targeted rereads. This retains more small-letter detail than the original 1280 × 960 path. It cannot recover detail that the camera never resolved.
+- Common right angles remain in the search. OpenCV estimates **local text/spine tilt** and OCR reads a deskewed region at that arbitrary angle. When an angle estimate is unavailable, it explores ±15°, ±30° and ±45° offsets. Perspective distortion, curved spines and highly stylised lettering remain difficult.
+- Camera tracking and OCR run on **separate executors**. Only one OCR job is active; new camera frames continue moving the boxes while recognition is busy.
+- **Pyramidal Lucas–Kanade optical flow**, forward/backward checks, robust similarity transforms and a reference-texture check follow each detected region through translation, rotation and scale changes. A visually verified track can stay highlighted without repeated successful OCR. Tracks get up to one second of faded grace if the visual evidence briefly fails, then disappear. Boxes immediately outside the view are removed.
+- Delayed OCR rectangles are mapped through a bounded three-second motion history and checked against the current image before display. The old rule discarding every OCR result over 700 ms is removed.
+- A gentle **single haptic tick** signals a new wanted entry. Continuous tracking and repeated OCR do not retrigger it. After an entry has been absent from the displayed tracks for 1.5 seconds, it can alert again. Simultaneous matches coalesce into a tick; author wildcard entries alert per rule, so several visible books by the same author do not buzz repeatedly. **Options → Gentle vibration** disables it.
+- Thermal throttling slows OCR without making recognition block tracking. No direct Tensor/NPU delegate is claimed.
+- Experimental spine proposals remain optional. Full-view and overlapping-tile reads are the default.
+
+This is a candidate for real-shelf testing. Generated-image emulator tests exercise tracking and recognition mechanics, not Pixel 10 accuracy, latency or battery life on actual books.
 
 ## Privacy and storage
 
-Only the wanted list, spine-cropping option and camera-permission prompt state persist locally. Camera frames and recognition results remain in memory and are discarded. No internet permission, analytics, accounts, microphone, GPS, media-library or vibration permission. Network permissions from dependency manifests are explicitly removed. Automatic Android backup is disabled; export a wanted-list backup before uninstalling. The document provider you choose for manual export may itself be cloud-backed.
+Only the wanted list, scanner options and camera-permission prompt state persist locally. Camera frames, OCR crops, reference patches and a short motion-transform history remain in memory and are discarded. No internet permission, analytics, accounts, microphone, GPS or media-library permission. Camera and vibration permissions are used. Network permissions from dependency manifests are explicitly removed. Automatic Android backup is disabled; export a wanted-list backup before uninstalling. The document provider you choose for manual export may itself be cloud-backed.
 
 ## Documentation
 
@@ -65,6 +72,6 @@ Only the wanted list, spine-cropping option and camera-permission prompt state p
 
 ## Credits
 
-Thanks to [Sappelen/BookSpineScanner](https://github.com/Sappelen/BookSpineScanner), licensed CC0 1.0, for the spine-first cropping and mild histogram-stretch preprocessing ideas. This app uses an independent Java implementation; its OpenCV/Tesseract/web code is not copied or bundled. See the notices for the reviewed source revision and implementation differences.
+Thanks to [Sappelen/BookSpineScanner](https://github.com/Sappelen/BookSpineScanner), licensed CC0 1.0, for the spine-first cropping and mild histogram-stretch preprocessing ideas. This app uses an independent Java implementation; its application code is not copied. Version 0.2 bundles the official OpenCV Android library for independent tracking and deskew implementations. See the notices for the reviewed source revision and implementation differences.
 
-Original BookScanner code is MIT licensed. ML Kit, AndroidX and the Gradle wrapper retain their own terms and licences.
+Original BookScanner code is MIT licensed. ML Kit, AndroidX, OpenCV and the Gradle wrapper retain their own terms and licences.

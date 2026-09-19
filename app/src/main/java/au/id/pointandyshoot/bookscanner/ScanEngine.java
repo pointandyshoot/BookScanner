@@ -4,132 +4,88 @@ import android.graphics.*;
 import android.os.SystemClock;
 import androidx.camera.core.ImageAnalysis;
 import androidx.camera.core.ImageProxy;
-import com.google.android.gms.tasks.Tasks;
-import com.google.mlkit.vision.common.InputImage;
-import com.google.mlkit.vision.text.*;
-import com.google.mlkit.vision.text.latin.TextRecognizerOptions;
 import au.id.pointandyshoot.bookscanner.core.*;
 import java.util.*;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.*;
+import java.util.concurrent.atomic.*;
 
+/** Fast camera/tracking lane plus one bounded, independent OCR lane. */
 final class ScanEngine implements ImageAnalysis.Analyzer {
     static final class Hit {
-        final RectF box; final String label, reason; final boolean repeated;
-        Hit(RectF box,String label,String reason,boolean repeated) {
-            this.box=box;this.label=label;this.reason=reason;this.repeated=repeated;
-        }
+        final float[] quad;final RectF box;final String label,reason;final boolean repeated,tracking;
+        Hit(LiveTracker.Visible v){quad=v.detection.quad.clone();float[] b=LiveTracker.bounds(quad);box=new RectF(b[0],b[1],b[2],b[3]);label=v.detection.label;reason=v.detection.reason;repeated=v.repeated;tracking=v.tracking;}
     }
-    interface Listener { void result(List<Hit> hits, int width, int height, long capturedAt, String status, int generation); }
-    private final TextRecognizer recognizer=TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS);
-    private final Matcher matcher=new Matcher();
-    private final Evidence evidence=new Evidence();
-    private final Listener listener;
+    interface Listener {void result(List<Hit> hits,int width,int height,long at,String status,int generation,boolean newAppearance);}
+    private static final class Batch {
+        final List<LiveTracker.Detection> hits;final VisionFrames.Gray capture;final long sequence,time;final int token;
+        Batch(List<LiveTracker.Detection> hits,VisionFrames.Gray capture,long sequence,long time,int token){this.hits=hits;this.capture=capture;this.sequence=sequence;this.time=time;this.token=token;}
+    }
+    private final ExecutorService analysisExecutor,ocrExecutor=Executors.newSingleThreadExecutor();
+    private final OcrReader reader=new OcrReader();
+    private final LiveTracker tracker=new LiveTracker();
+    private final AppearanceGate appearance=new AppearanceGate();
     private final AtomicInteger generation=new AtomicInteger();
+    private final AtomicBoolean busy=new AtomicBoolean();
+    private final AtomicReference<Batch> pending=new AtomicReference<>();
+    private final Listener listener;
     private volatile List<WantedBook> books=List.of();
-    private volatile boolean enabled=false, spineMode=false;
-    private volatile int thermal=0;
-    private long lastFrame=0, frame=0;
-    private int emptyFrames=0, activeGeneration=-1;
-    private final OrientationSchedule orientations=new OrientationSchedule();
-    private double averageMs=180;
+    private volatile boolean enabled,closing,spineMode;
+    private volatile int thermal;
+    private volatile String lastError="";
+    private long lastFrame,lastOcr,sequence;
+    private int activeGeneration=-1;
+    private final boolean visionReady;
 
-    ScanEngine(Listener listener) {this.listener=listener;}
-    void setBooks(List<WantedBook> entries) {books=List.copyOf(entries);invalidate();}
-    void setEnabled(boolean enabled) {this.enabled=enabled;invalidate();}
-    void setSpineMode(boolean enabled) {spineMode=enabled;invalidate();}
-    void setThermal(int thermal) {this.thermal=thermal;}
-    int generation() {return generation.get();}
-    private void invalidate() {generation.incrementAndGet();evidence.clear();}
-    void close(ExecutorService executor) { enabled=false;invalidate();executor.execute(recognizer::close);executor.shutdown(); }
-
-    @Override public void analyze(ImageProxy image) {
-        Bitmap upright=null;
-        long start=SystemClock.elapsedRealtime();
-        int token=generation.get();
-        try {
-            long interval=thermal>=3?700:(long)Math.max(140,Math.min(550,averageMs*1.1));
-            if(!enabled || books.stream().noneMatch(b->b.enabled) || start-lastFrame<interval) return;
-            if(activeGeneration!=token){orientations.reset();emptyFrames=0;activeGeneration=token;}
-            lastFrame=start;frame++;
-            upright=ImagePrep.uprightLuma(image);
-            int w=upright.getWidth(),h=upright.getHeight();
-            // Reuse a productive angle twice, but probe another every third frame so
-            // mixed shelves and a newly encountered spine orientation are never starved.
-            int angle=orientations.next();
-            boolean enhanced=emptyFrames>=4 && frame%2==0 && thermal<3;
-            List<Rect> regions=spineMode && frame%3!=0?ImagePrep.spineBands(upright):List.of();
-            if(regions.isEmpty()) regions=List.of(new Rect(0,0,w,h));
-            List<Hit> hits=new ArrayList<>();
-            for(Rect region:regions) {
-                if(!enabled || token!=generation.get()) return;
-                readRegion(upright,region,angle,enhanced,start,hits);
-            }
-            orientations.result(angle,!hits.isEmpty());
-            if(!hits.isEmpty()) emptyFrames=0; else emptyFrames++;
-            long elapsed=SystemClock.elapsedRealtime()-start;
-            averageMs=.8*averageMs+.2*elapsed;
-            // Suppress results from a previous session or a frame too old to point at safely.
-            if(enabled && token==generation.get()) listener.result(elapsed>700?List.of():hits,w,h,start,
-                    elapsed>700?"Reading slowly — hold steady":
-                    thermal>=3?"Phone warm — scanning more slowly":
-                    hits.isEmpty()?"Sweep slowly • move closer for small text":"Potential match — check the boxed spine",token);
-        } catch(Exception error) {
-            if(enabled && token==generation.get()) listener.result(List.of(),1,1,start,"Couldn’t read this frame — try again",token);
-        } finally {
-            if(upright!=null) upright.recycle();
-            image.close();
-        }
+    ScanEngine(Listener listener,ExecutorService analysisExecutor){this.listener=listener;this.analysisExecutor=analysisExecutor;visionReady=NativeVision.initialise();}
+    void setBooks(List<WantedBook> entries){books=List.copyOf(entries);invalidate();}
+    void setEnabled(boolean enabled){this.enabled=enabled;invalidate();}
+    void setSpineMode(boolean enabled){spineMode=enabled;}
+    void setThermal(int value){thermal=value;}
+    int generation(){return generation.get();}
+    private void invalidate(){
+        generation.incrementAndGet();pending.set(null);
+        if(!closing)analysisExecutor.execute(()->{tracker.clear();appearance.clear();lastFrame=lastOcr=0;activeGeneration=-1;});
     }
-    private void readRegion(Bitmap upright,Rect region,int angle,boolean enhanced,long time,List<Hit> hits) throws Exception {
-        Bitmap crop=Bitmap.createBitmap(upright,region.left,region.top,region.width(),region.height());
-        Bitmap prepared=enhanced?ImagePrep.contrast(crop):crop;
-        Bitmap rotated=ImagePrep.rotate(prepared,angle);
-        try {
-            Text result=Tasks.await(recognizer.process(InputImage.fromBitmap(rotated,0)));
-            for(Text.TextBlock block:result.getTextBlocks()) {
-                // Per-line matching prevents ML Kit's occasional shelf-wide block from combining titles.
-                for(Text.Line line:block.getLines()) addMatches(line.getText(),line.getBoundingBox(),region,angle,time,hits);
-                // A compact block can combine a multi-line title / author on the same spine.
-                Rect r=block.getBoundingBox();
-                if(r!=null && compact(block)) addMatches(block.getText(),r,region,angle,time,hits);
-            }
-        } finally {
-            if(rotated!=prepared) rotated.recycle();
-            if(prepared!=crop) prepared.recycle();
-            if(crop!=upright) crop.recycle();
-        }
+    void close(ExecutorService executor){
+        enabled=false;closing=true;generation.incrementAndGet();pending.set(null);
+        executor.execute(tracker::close);executor.shutdown();
+        ocrExecutor.execute(reader::close);ocrExecutor.shutdown();
     }
-    private static boolean compact(Text.TextBlock block) {
-        List<Text.Line> lines=block.getLines();
-        if(lines.size()<2 || lines.size()>5) return false;
-        Rect bounds=block.getBoundingBox();
-        float typical=0;
-        for(Text.Line line:lines) {
-            Rect r=line.getBoundingBox(); if(r==null)return false;
-            typical+=r.height();
-        }
-        typical/=lines.size();
-        // Reject blocks containing widely separated or side-by-side spines in OCR coordinates.
-        return bounds!=null && bounds.height()<typical*(lines.size()+1.8) && bounds.width()>bounds.height()*1.3;
+    @Override public void analyze(ImageProxy image){
+        long now=SystemClock.elapsedRealtime();int token=generation.get();Bitmap original=null;
+        try{
+            if(!enabled||closing||books.stream().noneMatch(b->b.enabled))return;
+            if(!visionReady){listener.result(List.of(),1,1,now,"Tracking could not start. Restart the app.",token,false);return;}
+            if(now-lastFrame<(thermal>=3?120:65))return;lastFrame=now;
+            if(activeGeneration!=token){tracker.clear();activeGeneration=token;}
+            VisionFrames.Gray gray=VisionFrames.trackingImage(image);long seq=++sequence;
+            tracker.frame(gray,seq,now);
+            Batch batch=pending.getAndSet(null);
+            if(batch!=null&&batch.token==token)tracker.detections(batch.hits,batch.capture,batch.sequence,batch.time);
+            List<Hit> hits=new ArrayList<>();Set<String> present=new HashSet<>();
+            for(LiveTracker.Visible v:tracker.visible()){hits.add(new Hit(v));present.add(v.detection.id);}
+            boolean alert=appearance.update(present,now);
+            if(enabled&&token==generation.get())listener.result(hits,gray.sourceWidth,gray.sourceHeight,now,
+                    !hits.isEmpty()?"Potential match — tracking highlighted text":!lastError.isEmpty()?lastError:
+                    thermal>=3?"Phone warm — detail reads slowed":"Sweep slowly • tap to focus • angled text enabled",token,alert);
+            if(now-lastOcr<(thermal>=3?1100:250)||!busy.compareAndSet(false,true))return;
+            try{original=ImagePrep.uprightLuma(image);}catch(RuntimeException e){busy.set(false);throw e;}
+            final Bitmap captureBitmap=original;final List<WantedBook> wanted=books;
+            final float[] recheck=tracker.recheckRegion();final boolean crops=spineMode;
+            lastOcr=now;
+            ocrExecutor.execute(()->{
+                try{
+                    if(valid(token))reader.read(captureBitmap,wanted,token,crops,recheck,()->valid(token),
+                            detections->{if(valid(token))pending.set(new Batch(detections,gray,seq,now,token));});
+                    lastError="";
+                }catch(Exception error){if(valid(token))lastError="Couldn’t read text — hold steady or improve lighting";}
+                finally{captureBitmap.recycle();busy.set(false);}
+            });
+            original=null; // Ownership transferred to the OCR worker.
+        }catch(RuntimeException error){
+            tracker.clear();
+            if(valid(token))listener.result(List.of(),1,1,now,"Tracking lost — hold steady to reacquire",token,false);
+        }finally{if(original!=null)original.recycle();image.close();}
     }
-    private void addMatches(String text,Rect rect,Rect region,int angle,long time,List<Hit> hits) {
-        if(rect==null || text.length()>500) return;
-        RectF box=new RectF(Float.MAX_VALUE,Float.MAX_VALUE,-Float.MAX_VALUE,-Float.MAX_VALUE);
-        for(float[] p:new float[][]{{rect.left,rect.top},{rect.right,rect.top},{rect.right,rect.bottom},{rect.left,rect.bottom}}) {
-            float[] q=Geometry.unrotate(p[0],p[1],angle,region.width(),region.height());
-            box.left=Math.min(box.left,q[0]+region.left);box.right=Math.max(box.right,q[0]+region.left);
-            box.top=Math.min(box.top,q[1]+region.top);box.bottom=Math.max(box.bottom,q[1]+region.top);
-        }
-        for(Matcher.Match match:matcher.find(text,books)) {
-            float[] coords={box.left,box.top,box.right,box.bottom};
-            boolean duplicate=false;
-            for(Hit hit:hits) if(hit.label.equals(match.book.label()) && Geometry.overlap(coords,
-                    new float[]{hit.box.left,hit.box.top,hit.box.right,hit.box.bottom})>.35) {duplicate=true;break;}
-            if(duplicate)continue;
-            int count=evidence.observe(match.book.id,coords,time,frame);
-            hits.add(new Hit(new RectF(box),match.book.label(),match.reason,count>=2));
-            if(hits.size()>=20)return;
-        }
-    }
+    private boolean valid(int token){return enabled&&!closing&&generation.get()==token;}
 }

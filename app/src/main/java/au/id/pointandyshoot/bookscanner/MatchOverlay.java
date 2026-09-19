@@ -15,7 +15,7 @@ final class MatchOverlay extends View {
     MatchOverlay(Context c){super(c);setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_NO);}
     void update(List<ScanEngine.Hit> hits,int width,int height,long frameTime){
         this.hits=List.copyOf(hits);imageWidth=width;imageHeight=height;
-        expires=frameTime+750;removeCallbacks(expire);
+        expires=frameTime+600;removeCallbacks(expire);
         postDelayed(expire,Math.max(0,expires-SystemClock.elapsedRealtime()));invalidate();
     }
     void clear(){hits=List.of();removeCallbacks(expire);invalidate();}
@@ -31,7 +31,11 @@ final class MatchOverlay extends View {
             r.inset(-4*density,-4*density);
             paint.setColor(hit.repeated?Color.rgb(145,215,172):Color.rgb(255,201,97));
             paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth((hit.repeated?3:2)*density);
-            canvas.drawRoundRect(r,5*density,5*density,paint);
+            paint.setAlpha(hit.tracking?255:140);
+            Path outline=new Path();
+            outline.moveTo(dx+hit.quad[0]*scale,dy+hit.quad[1]*scale);
+            for(int i=2;i<8;i+=2)outline.lineTo(dx+hit.quad[i]*scale,dy+hit.quad[i+1]*scale);
+            outline.close();canvas.drawPath(outline,paint);paint.setAlpha(255);
             paint.setTextSize(13*density);paint.setStyle(Paint.Style.FILL);
             String label=hit.label+(hit.reason.startsWith("Author only")?" · check title":"");
             while(label.length()>3 && paint.measureText(label)>getWidth()-24*density) label=label.substring(0,label.length()-2)+"…";
