@@ -1,4 +1,4 @@
-# Architecture (0.2)
+# Architecture (0.3)
 
 ## Concurrent pipeline
 
@@ -6,15 +6,21 @@
 
 The analysis executor samples a maximum 640-pixel-long-edge grayscale tracking image directly from the Y plane, respecting row/pixel stride. It aims for a 65 ms interval (120 ms when warm). It closes each camera proxy after copying, without waiting for OCR. `LiveTracker` owns its native Mats exclusively on this thread.
 
-When the OCR executor is idle, the analyser copies an upright full-detail image and gives ownership to that worker. One job performs a full-view read plus one detail-region read. Every pass can publish results immediately through a single replaceable pending batch. There is no unbounded image/job queue. Session generations reject callbacks after pause, navigation, list changes, recreation or shutdown. Bitmap ownership is released in `finally`, and the recogniser is closed after the OCR worker drains.
+When the OCR executor is idle, the analyser copies an upright full-detail image and gives ownership to that worker. Jobs alternate full-view detection and detail-region detection. Every pass can publish results immediately through a single replaceable pending batch. There is no unbounded image/job queue. Session generations reject callbacks after pause, navigation, list changes, recreation or shutdown. Bitmap ownership is released in `finally`, and the recogniser is closed after the OCR worker drains.
 
 ## Small and angled text
 
 `ReadingImage` combines crop, optional enlargement, arbitrary rotation and translation into one Android matrix, with a white border. Its inverse maps OCR corner polygons back into the upright full-detail image. The overlay draws these polygons rather than an axis-aligned rectangle that loses text orientation.
 
-`ReadingSchedule` preserves right-angle discovery (90°, 180°, 270°, 0°) and exploration even after a success. Each job also uses a local tilt estimate from Canny/Hough line segments, modulo 90°. Estimates are continuous angles. A detail region can have a different tilt from the full shelf. With no reliable estimate, fixed ±15°, ±30°, ±45° offsets supplement the coarse angles. This is a bounded search, not exhaustive perspective rectification.
+`OcrReader` owns PP-OCRv4 Mobile through JNI. NCNN is built from pinned source. BGR detector input uses ImageNet normalisation and dimensions divisible by 32; recognition strips are 48 pixels high and normalised to [-1,1]. CTC decoding uses the exact 6,625-class dictionary. Loading/output shapes are checked; no ML Kit fallback is retained.
 
-Four 65%-size overlapping tiles retain native image detail; their schedule is offset from the orientation schedule so a tile is not locked to one quadrant. A previously detected region can receive a targeted reread after 2.5 seconds. Optional spine strips replace some detail tiles; they never disable full-view discovery. OCR retains the bundled ML Kit Latin recogniser and the existing local fuzzy title/author/alias matcher. No cloud model or book database is queried. Enlargement does not create missing source detail.
+DB probability-map contours are scored, fitted to rotated rectangles and expanded by area × 1.5 / perimeter. Crops are rectified from the higher-resolution source. Both reading directions are checked; OCR confidence selects orientation independently of wanted entries. This handles arbitrary rotation, not all curved-spine/perspective distortion. Unrelated text regions are never stitched together.
+
+Four overlapping 65%-size tiles retain native detail. Tentative tracks are eligible for rereads after 600 ms, confirmed tracks after 2.5 seconds. Full-view jobs continue between detail jobs. A job processes up to 24 regions and checks a 1.8-second soft budget between them. Individual inference cannot be interrupted. Starting regions rotate to avoid starving later text.
+
+Orange indicates fuzzy/partial matching. A distinctive token can suggest a longer title/author, but remains weak. Short titles require exact whole words. Author-only clues for a specific title remain weak. Similarly scored competing entries also remain tentative.
+
+Each visual track owns `Confirmation`: three strong observations from distinct frames within five seconds are needed for green. Strong means title similarity >= 0.88 or author-wildcard similarity >= 0.90, plus OCR confidence >= 0.80 and no close competitor. Crops/callbacks from one frame count once; weak readings and optical flow do not count. Green persists while the same texture remains tracked. Reacquisition starts confirmation anew.
 
 ## Tracking and late results
 
@@ -40,7 +46,8 @@ The version 1 JSON format is unchanged: `version: 1`, `books: []`, with each ent
 
 ## References
 
-- [ML Kit input image guidelines](https://developers.google.com/ml-kit/vision/text-recognition/v2/android#input-image-guidelines): recognition depends on the number of pixels per character, focus and image quality.
+- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR/tree/v2.7.0)
+- [NCNN](https://github.com/Tencent/ncnn)
 - [OpenCV Android setup](https://docs.opencv.org/4.x/d5/df8/tutorial_dev_with_OCV_on_Android.html)
 - [OpenCV pyramidal optical flow](https://docs.opencv.org/4.x/javadoc/org/opencv/video/Video.html)
 - [OpenCV robust affine estimation](https://docs.opencv.org/4.x/javadoc/org/opencv/calib3d/Calib3d.html)

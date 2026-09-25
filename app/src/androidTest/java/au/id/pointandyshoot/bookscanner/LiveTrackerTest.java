@@ -21,7 +21,7 @@ public class LiveTrackerTest {
         return m;
     }
     private VisionFrames.Gray gray(Mat m){byte[] data=new byte[m.rows()*m.cols()];m.get(0,0,data);return new VisionFrames.Gray(data,m.cols(),m.rows(),m.cols(),m.rows());}
-    private List<LiveTracker.Detection> detection(){return List.of(new LiveTracker.Detection("wanted","A wanted book","Title match",BOX));}
+    private List<LiveTracker.Detection> detection(){return List.of(new LiveTracker.Detection("wanted","A wanted book","Title match",BOX,true));}
     private Mat shifted(Mat base,int i){
         Mat transform=Imgproc.getRotationMatrix2D(new Point(320,240),i*.12,1+i*.0005);
         transform.put(0,2,transform.get(0,2)[0]+i*.8);transform.put(1,2,transform.get(1,2)[0]+i*.2);
@@ -57,11 +57,26 @@ public class LiveTrackerTest {
     @Test public void separateBooksWithSameWantedEntryKeepSeparateStableIdentities(){
         Mat base=shelf();try(LiveTracker tracker=new LiveTracker()){
             VisionFrames.Gray first=gray(base);tracker.frame(first,1,0);
-            List<LiveTracker.Detection> two=List.of(detection().get(0),new LiveTracker.Detection("wanted","Same author","Author match",new float[]{20,330,130,330,130,400,20,400}));
+            List<LiveTracker.Detection> two=List.of(detection().get(0),new LiveTracker.Detection("wanted","Same author","Author match",new float[]{20,330,130,330,130,400,20,400},true));
             tracker.detections(two,first,1,0);assertEquals(2,tracker.visible().size());
             String a=tracker.visible().get(0).appearanceId,b=tracker.visible().get(1).appearanceId;
             assertNotEquals(a,b);tracker.detections(two,first,1,0);
             assertEquals(a,tracker.visible().get(0).appearanceId);assertEquals(b,tracker.visible().get(1).appearanceId);
+        }finally{base.release();}
+    }
+    @Test public void weakTrackingStaysOrangeAndThreeStrongFramesTurnGreen(){
+        Mat base=shelf();try(LiveTracker tracker=new LiveTracker()){
+            VisionFrames.Gray first=gray(base);
+            List<LiveTracker.Detection> weak=List.of(new LiveTracker.Detection("wanted","A wanted book","Possible title",BOX,false));
+            for(int i=1;i<=5;i++){tracker.frame(first,i,i*100);tracker.detections(weak,first,i,i*100);assertFalse(tracker.visible().get(0).repeated);}
+            for(int i=6;i<=8;i++){tracker.frame(first,i,i*100);tracker.detections(detection(),first,i,i*100);assertEquals(i==8,tracker.visible().get(0).repeated);}
+        }finally{base.release();}
+    }
+    @Test public void duplicateCallbacksDoNotTurnGreen(){
+        Mat base=shelf();try(LiveTracker tracker=new LiveTracker()){
+            VisionFrames.Gray first=gray(base);tracker.frame(first,1,0);
+            for(int i=0;i<8;i++)tracker.detections(detection(),first,1,0);
+            assertFalse(tracker.visible().get(0).repeated);
         }finally{base.release();}
     }
     @Test public void oldResultsAndSessionResetCannotResurrectBoxes(){

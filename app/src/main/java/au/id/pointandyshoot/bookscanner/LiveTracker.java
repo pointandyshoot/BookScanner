@@ -1,6 +1,7 @@
 package au.id.pointandyshoot.bookscanner;
 
 import au.id.pointandyshoot.bookscanner.core.Geometry;
+import au.id.pointandyshoot.bookscanner.core.Confirmation;
 import org.opencv.core.*;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.video.Video;
@@ -11,16 +12,16 @@ import java.util.*;
 final class LiveTracker implements AutoCloseable {
     static final long GRACE_MS=1000,HISTORY_MS=3000;
     static final class Detection {
-        final String id,label,reason;final float[] quad;
-        Detection(String id,String label,String reason,float[] quad){this.id=id;this.label=label;this.reason=reason;this.quad=quad.clone();}
+        final String id,label,reason;final float[] quad;final boolean strong;
+        Detection(String id,String label,String reason,float[] quad,boolean strong){this.id=id;this.label=label;this.reason=reason;this.quad=quad.clone();this.strong=strong;}
     }
     static final class Visible {
         final Detection detection;final boolean repeated,tracking;final String appearanceId;
         Visible(Detection d,boolean repeated,boolean tracking,String appearanceId){detection=d;this.repeated=repeated;this.tracking=tracking;this.appearanceId=appearanceId;}
     }
     private static final class Track {
-        Detection detection;float[] quad;Mat template;long lastGood,lastRead,lastReadSequence;int reads=1;String appearanceId;
-        Track(Detection d,float[] q,Mat t,long now,long seq){detection=d;quad=q;template=t;lastGood=lastRead=now;lastReadSequence=seq;}
+        Detection detection;float[] quad;Mat template;long lastGood,lastRead,lastReadSequence;final Confirmation confirmation=new Confirmation();String appearanceId;
+        Track(Detection d,float[] q,Mat t,long now,long seq){detection=d;quad=q;template=t;lastGood=lastRead=now;lastReadSequence=seq;confirmation.observe(seq,now,d.strong);}
     }
     private static final class Lost {
         final String entry,key;final float[] quad;final long at;
@@ -86,12 +87,12 @@ final class LiveTracker implements AutoCloseable {
                 Track existing=null;
                 for(Track t:tracks)if(t.detection.id.equals(d.id)&&Geometry.overlap(bounds(t.quad),bounds(q))>.12){existing=t;break;}
                 if(existing!=null){
-                    if(captureSequence>existing.lastReadSequence)existing.reads++;
+                    existing.confirmation.observe(captureSequence,capturedAt,d.strong);
                     existing.template.release();existing.template=template;existing.quad=q;existing.lastGood=now;
                     existing.lastRead=capturedAt;existing.lastReadSequence=captureSequence;
-                    if(!d.reason.startsWith("Author only")||existing.detection.reason.startsWith("Author only"))existing.detection=d;
+                    if(d.strong||!existing.detection.strong)existing.detection=d;
                 }else if(tracks.size()<12){
-                    Track added=new Track(d,q,template,now,captureSequence);
+                    Track added=new Track(d,q,template,capturedAt,captureSequence);added.lastGood=now;
                     added.appearanceId="track-"+(++nextAppearance);
                     Iterator<Lost> lost=recentlyLost.iterator();
                     while(lost.hasNext()) {Lost old=lost.next();if(old.entry.equals(d.id)&&Geometry.overlap(bounds(old.quad),bounds(q))>.2){added.appearanceId=old.key;lost.remove();break;}}
@@ -103,12 +104,12 @@ final class LiveTracker implements AutoCloseable {
     List<Visible> visible(){
         if(previous==null)return List.of();List<Visible> result=new ArrayList<>();
         for(Track t:tracks)result.add(new Visible(new Detection(t.detection.id,t.detection.label,t.detection.reason,
-                scale(t.quad,(float)sourceWidth/previous.cols(),(float)sourceHeight/previous.rows())),t.reads>1,now-t.lastGood<150,t.appearanceId));
+                scale(t.quad,(float)sourceWidth/previous.cols(),(float)sourceHeight/previous.rows()),t.detection.strong),t.confirmation.confirmed(),now-t.lastGood<150,t.appearanceId));
         return result;
     }
     float[] recheckRegion(){
         if(previous==null)return null;
-        Track oldest=null;for(Track t:tracks)if(now-t.lastRead>2500&&(oldest==null||t.lastRead<oldest.lastRead))oldest=t;
+        Track oldest=null;for(Track t:tracks)if(now-t.lastRead>(t.confirmation.confirmed()?2500:600)&&(oldest==null||t.lastRead<oldest.lastRead))oldest=t;
         return oldest==null?null:bounds(scale(oldest.quad,(float)sourceWidth/previous.cols(),(float)sourceHeight/previous.rows()));
     }
     private float[] replay(float[] q,long from){

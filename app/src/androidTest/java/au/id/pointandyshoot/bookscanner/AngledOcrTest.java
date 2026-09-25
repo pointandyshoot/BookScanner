@@ -25,10 +25,10 @@ public class AngledOcrTest {
         paint.setColor(Color.BLACK);paint.setTypeface(Typeface.create("sans-serif",Typeface.BOLD));paint.setTextSize(42);
         canvas.drawText("TERRY PRATCHETT",550,700,paint);
         WantedBook wanted=new WantedBook("public-example","*","Terry Pratchett",List.of(),true);
-        try(OcrReader reader=new OcrReader()){
+        try(OcrReader reader=new OcrReader(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().getTargetContext().getAssets())){
             for(float tilt:new float[]{-27,33,73}){
                 try(ReadingImage scene=new ReadingImage(base,new Rect(0,0,1920,1440),tilt,1)){
-                    List<LiveTracker.Detection> hits=reader.readAtAngle(scene.bitmap,new Rect(0,0,scene.bitmap.getWidth(),scene.bitmap.getHeight()),-tilt,1,List.of(wanted));
+                    List<LiveTracker.Detection> hits=reader.readAtAngle(scene.bitmap,new Rect(0,0,scene.bitmap.getWidth(),scene.bitmap.getHeight()),0,1,List.of(wanted));
                     assertFalse("No author at tilt "+tilt,hits.isEmpty());
                     float[] bounds=LiveTracker.bounds(hits.get(0).quad);
                     assertTrue(bounds[0]>=0&&bounds[2]<=scene.bitmap.getWidth()+2);

@@ -9,9 +9,19 @@
 
 Credit for the mild histogram-stretch approach, narrow-spine proposals, padded crops and right-angle OCR preparation. BookScanner independently implements these concepts in Java. It uses percentile endpoints on grayscale luminance rather than RGB min/max stretching, a lightweight vertical-boundary proposal rather than OpenCV Canny/dilation/contours, and bounded live-frame scheduling rather than photograph processing. No upstream application source, Tesseract runtime, icons or other assets are copied or bundled. The official OpenCV Android runtime is independently added in version 0.2 as described below.
 
-## Google ML Kit
+## PaddleOCR PP-OCRv4 Mobile (0.3)
 
-Bundled `com.google.mlkit:text-recognition:16.0.1` and its transitive runtime/model dependencies are governed by [Google ML Kit terms](https://developers.google.com/ml-kit/terms), not this repository's MIT licence. See [ML Kit recognition documentation](https://developers.google.com/ml-kit/vision/text-recognition/v2/android). Recognition is on-device; the app removes networking permissions from the merged manifest.
+Upstream: https://github.com/PaddlePaddle/PaddleOCR/tree/v2.7.0 — Apache Licence 2.0, included in `assets/licences/PaddleOCR.txt`.
+
+Converted mobile detector and recogniser: https://github.com/FeiGeChuanShu/ncnn_ppstructure/tree/dbe10814b5cb6bbefd5f1460489db15f2489b8ee/models/ppocrv4 . Only these model assets are used; application code is independently implemented. The converter identifies them as PP-OCRv4 lite models. The conversion repository does not supply a separate licence or a complete reproducible conversion recipe. A conversion audit remains necessary before claiming F-Droid readiness.
+
+Dictionary: PaddleOCR `v2.7.0`, `ppocr/utils/ppocr_keys_v1.txt`: 6,623 entries plus CTC blank and space. Sources and SHA-256 hashes are recorded in `assets/ppocrv4/provenance.json`; Gradle verifies them before building. All models are bundled for offline use.
+
+## NCNN (0.3)
+
+https://github.com/Tencent/ncnn — BSD 3-Clause, included in `assets/licences/ncnn.txt`. Built from the source submodule at `305837fd4a722ebc47c5d72e72d8ec9ae970e932` (20250503). CPU only, two threads, no Vulkan or FP16 arithmetic/storage. No downloaded native binaries. Existing NCNN notices remain in the source submodule.
+
+Google ML Kit and its transitive runtime/model dependencies were removed in 0.3.
 
 ## AndroidX
 
