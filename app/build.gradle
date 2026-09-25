@@ -25,7 +25,6 @@ android {
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
-    sourceSets.main.assets.srcDir(layout.buildDirectory.dir('generated/ocrAssets'))
     lint { abortOnError true }
 }
 
@@ -57,13 +56,13 @@ tasks.register('verifyOcrAssets') {
 }
 tasks.named('preBuild').configure { dependsOn 'verifyOcrAssets' }
 
-tasks.register('prepareOcrAssets', Sync) {
+def prepareOcrAssets = tasks.register('prepareOcrAssets', Sync) {
     dependsOn 'verifyOcrAssets'
     from(rootProject.file('third_party/ppocr-models/models/ppocrv4')) {
         include 'det.param', 'det.bin', 'rec.param', 'rec.bin'
+        into 'ppocrv4'
     }
-    into(layout.buildDirectory.dir('generated/ocrAssets/ppocrv4'))
+    into(layout.buildDirectory.dir('generated/ocrAssets'))
 }
-tasks.configureEach {
-    if (name.startsWith('merge') && name.endsWith('Assets')) dependsOn 'prepareOcrAssets'
-}
+// Task-backed assets propagate generation dependencies to packaging and lint.
+android.sourceSets.main.assets.srcDir(prepareOcrAssets)
