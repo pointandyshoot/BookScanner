@@ -64,5 +64,13 @@ def prepareOcrAssets = tasks.register('prepareOcrAssets', Sync) {
     }
     into(layout.buildDirectory.dir('generated/ocrAssets'))
 }
-// Task-backed assets propagate generation dependencies to packaging and lint.
-android.sourceSets.main.assets.srcDir(prepareOcrAssets)
+android.sourceSets.main.assets.srcDir(layout.buildDirectory.dir('generated/ocrAssets'))
+// AGP resolves asset source directories without retaining Gradle's builtBy metadata.
+// Generate before every variant's preBuild, including instrumentation packaging.
+tasks.named('preBuild').configure { dependsOn prepareOcrAssets }
+tasks.configureEach {
+    if (name.toLowerCase().contains('lint') ||
+            (name.startsWith('merge') && name.endsWith('Assets'))) {
+        dependsOn prepareOcrAssets
+    }
+}
