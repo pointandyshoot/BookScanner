@@ -64,19 +64,19 @@ public class LiveTrackerTest {
             assertEquals(a,tracker.visible().get(0).appearanceId);assertEquals(b,tracker.visible().get(1).appearanceId);
         }finally{base.release();}
     }
-    @Test public void weakTrackingStaysOrangeAndThreeStrongFramesTurnGreen(){
+    @Test public void weakClueAppearsImmediatelyAndRemainsOneTrack(){
         Mat base=shelf();try(LiveTracker tracker=new LiveTracker()){
             VisionFrames.Gray first=gray(base);
             List<LiveTracker.Detection> weak=List.of(new LiveTracker.Detection("wanted","A wanted book","Possible title",BOX,false));
-            for(int i=1;i<=5;i++){tracker.frame(first,i,i*100);tracker.detections(weak,first,i,i*100);assertFalse(tracker.visible().get(0).repeated);}
-            for(int i=6;i<=8;i++){tracker.frame(first,i,i*100);tracker.detections(detection(),first,i,i*100);assertEquals(i==8,tracker.visible().get(0).repeated);}
+            for(int i=1;i<=5;i++){tracker.frame(first,i,i*100);tracker.detections(weak,first,i,i*100);assertEquals(1,tracker.visible().size());}
+            for(int i=6;i<=8;i++){tracker.frame(first,i,i*100);tracker.detections(detection(),first,i,i*100);assertEquals(1,tracker.visible().size());}
         }finally{base.release();}
     }
-    @Test public void duplicateCallbacksDoNotTurnGreen(){
+    @Test public void duplicateCallbacksKeepOneHighlight(){
         Mat base=shelf();try(LiveTracker tracker=new LiveTracker()){
             VisionFrames.Gray first=gray(base);tracker.frame(first,1,0);
             for(int i=0;i<8;i++)tracker.detections(detection(),first,1,0);
-            assertFalse(tracker.visible().get(0).repeated);
+            assertEquals(1,tracker.visible().size());
         }finally{base.release();}
     }
     @Test public void oldResultsAndSessionResetCannotResurrectBoxes(){

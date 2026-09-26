@@ -12,8 +12,8 @@ import java.util.concurrent.atomic.*;
 /** Fast camera/tracking lane plus one bounded, independent OCR lane. */
 final class ScanEngine implements ImageAnalysis.Analyzer {
     static final class Hit {
-        final float[] quad;final RectF box;final String label,reason;final boolean repeated,tracking;
-        Hit(LiveTracker.Visible v){quad=v.detection.quad.clone();float[] b=LiveTracker.bounds(quad);box=new RectF(b[0],b[1],b[2],b[3]);label=v.detection.label;reason=v.detection.reason;repeated=v.repeated;tracking=v.tracking;}
+        final float[] quad;final RectF box;final String label,reason;final boolean tracking;
+        Hit(LiveTracker.Visible v){quad=v.detection.quad.clone();float[] b=LiveTracker.bounds(quad);box=new RectF(b[0],b[1],b[2],b[3]);label=v.detection.label;reason=v.detection.reason;tracking=v.tracking;}
     }
     interface Listener {void result(List<Hit> hits,int width,int height,long at,String status,int generation,boolean newAppearance);}
     private static final class Batch {
@@ -66,7 +66,7 @@ final class ScanEngine implements ImageAnalysis.Analyzer {
             for(LiveTracker.Visible v:tracker.visible()){hits.add(new Hit(v));present.add(v.appearanceId);}
             boolean alert=appearance.update(present,now);
             if(enabled&&token==generation.get())listener.result(hits,gray.sourceWidth,gray.sourceHeight,now,
-                    !hits.isEmpty()?"Orange: possible • green: strong across 3 frames":!lastError.isEmpty()?lastError:
+                    !hits.isEmpty()?"Highlighted books may match — check the spine":!lastError.isEmpty()?lastError:
                     thermal>=3?"Phone warm — detail reads slowed":"PP-OCRv4 • sweep slowly • tap to focus",token,alert);
             if(now-lastOcr<(thermal>=3?1100:250)||!busy.compareAndSet(false,true))return;
             try{original=ImagePrep.uprightLuma(image);}catch(RuntimeException e){busy.set(false);throw e;}

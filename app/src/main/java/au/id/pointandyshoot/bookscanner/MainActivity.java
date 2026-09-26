@@ -199,7 +199,7 @@ public final class MainActivity extends ComponentActivity {
                     else {getPreferences(0).edit().putBoolean("spines",checked).apply();scanner.setSpineMode(checked);}})
                 .setPositiveButton("Done",null).setNeutralButton("About",(d,w)->new AlertDialog.Builder(this)
                         .setTitle("BookScanner 0.3")
-                        .setMessage("Offline PP-OCRv4 Mobile recognition with NCNN. Orange: possible match. Green: strong across three frames. Live visual tracking and optional detection vibration. No saved photos or scan history.\n\nPreprocessing inspired by Sappelen/BookSpineScanner (CC0 1.0). Independently implemented for Android.\n\nPaddleOCR, AndroidX and OpenCV: Apache 2.0. NCNN: BSD 3-Clause. See repository notices for source links.")
+                        .setMessage("Offline PP-OCRv4 Mobile recognition with NCNN. One orange highlight: a possible match for you to check. Live visual tracking and optional detection vibration. No saved photos or scan history.\n\nPreprocessing inspired by Sappelen/BookSpineScanner (CC0 1.0). Independently implemented for Android.\n\nPaddleOCR, AndroidX and OpenCV: Apache 2.0. NCNN: BSD 3-Clause. See repository notices for source links.")
                         .setPositiveButton("Done",null).show()).show();
     }
     private void signalDetection(){

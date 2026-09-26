@@ -24,4 +24,8 @@ public class MatcherTest {
     @Test public void fullAuthorWildcardIsStrong(){assertTrue(matcher.find("TERRY PRATCHETT",List.of(book("*","Terry Pratchett"))).get(0).strong);}
     @Test public void partialOcrErrorIsTentative(){assertFalse(matcher.find("PRATCHETI",List.of(book("*","Terry Pratchett"))).get(0).strong);}
     @Test public void unrelatedTitleDoesNotMatch(){assertTrue(matcher.find("THE SILENT PATIENT",List.of(book("All the Light We Cannot See",""))).isEmpty());}
+    @Test public void fiveLetterSurnameIsEnoughForHint(){assertFalse(matcher.find("MEYER",List.of(book("*","Stephenie Meyer"))).get(0).strong);}
+    @Test public void shortDistinctiveAuthorWordIsEnoughForHint(){assertFalse(matcher.find("BEAR",List.of(book("*","Greg Bear"))).get(0).strong);}
+    @Test public void imperfectSurnameIsEnoughForHint(){assertFalse(matcher.find("RElCHS",List.of(book("*","Kathy Reichs"))).get(0).strong);}
+    @Test public void printAndEditionAreNotHints(){assertTrue(matcher.find("LARGE PRINT EDITION",List.of(book("The Large Book of Tomorrow",""))).isEmpty());}
 }

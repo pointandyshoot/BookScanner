@@ -28,27 +28,30 @@ public final class Matcher {
             double partialAuthor=b.author.isBlank()?0:partial(b.author,observed);
             if(b.title.equals("*")) {
                 if(author>=.90)found.add(new Match(b,author,"Author match",true));
-                else if(author>=.68||partialAuthor>0)found.add(new Match(b,Math.max(author,partialAuthor),"Possible author",false));
+                else if(author>=.60||partialAuthor>0)found.add(new Match(b,Math.max(author,partialAuthor),"Possible author",false));
                 continue;
             }
             double title=similarity(b.title,observed),partialTitle=partial(b.title,observed);
             for(String alias:b.aliases){title=Math.max(title,similarity(alias,observed));partialTitle=Math.max(partialTitle,partial(alias,observed));}
             if(title>=.88)found.add(new Match(b,title,"Title match",true));
-            else if(title>=.64||partialTitle>0)found.add(new Match(b,Math.max(title,partialTitle),"Possible title",false));
+            else if(title>=.60||partialTitle>0)found.add(new Match(b,Math.max(title,partialTitle),"Possible title",false));
             else if(author>=.90)found.add(new Match(b,.70,"Author only — check title",false));
-            else if(author>=.68||partialAuthor>0)found.add(new Match(b,.60,"Possible author — check title",false));
+            else if(author>=.60||partialAuthor>0)found.add(new Match(b,.60,"Possible author — check title",false));
         }
         found.sort(Comparator.comparingDouble((Match m) -> m.score).reversed());
         return found;
     }
-    private static final Set<String> COMMON=Set.of("the","and","with","from","this","that","book","books","novel","series","volume","author","bestseller","bestselling");
+    private static final Set<String> COMMON=Set.of("the","and","with","from","this","that","book","books","novel","series","volume","author","bestseller","bestselling","large","print","edition","international","million","copy","copies","fiction","story");
     /** Substantial distinctive fragments are clues, not confirmed identities. */
     static double partial(String target,String observed) {
         for(String token:normalise(target.replace("*"," ").replace("?"," ")).split(" ")) {
-            if(token.length()<6||COMMON.contains(token))continue;
+            if(token.length()<4||COMMON.contains(token))continue;
             for(String word:observed.split(" ")) {
-                if(word.length()<5||COMMON.contains(word))continue;
-                if(1.0-(double)distance(token,word)/Math.max(token.length(),word.length())>=.78)return .66;
+                if(word.length()<4||COMMON.contains(word))continue;
+                if(token.equals(word))return .70;
+                // Five-letter fragments and single OCR errors are useful shelf hints.
+                if(Math.min(token.length(),word.length())>=5 &&
+                        1.0-(double)distance(token,word)/Math.max(token.length(),word.length())>=.70)return .62;
             }
         }
         return 0;

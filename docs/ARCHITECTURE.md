@@ -1,3 +1,8 @@
+# Architecture (0.4)
+
+Version 0.4 supersedes the confirmation and scheduling rules below: one immediate orange hint; no Confirmation state. Detail discovery uses nine overlapping 45%-size tiles, three detail passes per full view, with a targeted reread at most once per twelve jobs. OCR acceptance is 0.35, detector contour confidence 0.40, binary threshold 0.20. Nearby parallel text lines may be paired for matching. The per-region soft budget is 1.1 seconds. Very clear readings (0.93) skip reverse recognition. Tracking, lifecycle and offline persistence remain as described.
+
+## Previous 0.3 architecture (historical)
 # Architecture (0.3)
 
 ## Concurrent pipeline

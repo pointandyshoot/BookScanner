@@ -22,7 +22,7 @@ final class OcrReader implements AutoCloseable {
     private long handle;
     private final List<String> keys=new ArrayList<>();
     private final Matcher matcher=new Matcher();
-    private int step,session=-1;
+    private int step,detailStep,session=-1;
     OcrReader(AssetManager assets){this.assets=assets;}
     private void initialise() throws IOException {
         if(handle!=0)return;
@@ -36,16 +36,16 @@ final class OcrReader implements AutoCloseable {
     }
     void read(Bitmap upright,List<WantedBook> books,int token,boolean spineMode,float[] recheck,
               BooleanSupplier valid,Consumer<List<LiveTracker.Detection>> publish) throws Exception {
-        if(session!=token){step=0;session=token;}
+        if(session!=token){step=0;detailStep=0;session=token;}
         initialise();int w=upright.getWidth(),h=upright.getHeight();Rect region=new Rect(0,0,w,h);
         // Alternate coverage and native-resolution detail. Revisit tentative tracks preferentially.
-        if(step%2==1){
-            if(recheck!=null){
+        if(step%4!=0){
+            if(recheck!=null&&step%12==11){
                 int pad=Math.max(48,Math.round(Math.max(recheck[2]-recheck[0],recheck[3]-recheck[1])*.25f));
                 region=new Rect(Math.max(0,(int)recheck[0]-pad),Math.max(0,(int)recheck[1]-pad),Math.min(w,(int)recheck[2]+pad),Math.min(h,(int)recheck[3]+pad));
             }else{
-                int cw=Math.round(w*.65f),ch=Math.round(h*.65f),tile=(step/2)%4;
-                int left=tile%2==0?0:w-cw,top=tile<2?0:h-ch;region=new Rect(left,top,left+cw,top+ch);
+                int cw=Math.round(w*.45f),ch=Math.round(h*.45f),tile=detailStep++%9;
+                int left=(tile%3)*(w-cw)/2,top=(tile/3)*(h-ch)/2;region=new Rect(left,top,left+cw,top+ch);
                 if(spineMode){List<Rect> bands=ImagePrep.spineBands(upright);if(!bands.isEmpty())region=bands.get((step/2)%bands.size());}
             }
         }
@@ -57,25 +57,33 @@ final class OcrReader implements AutoCloseable {
     private List<LiveTracker.Detection> readRegions(ReadingImage input,List<WantedBook> books,BooleanSupplier valid,
                                                    Consumer<List<LiveTracker.Detection>> publish,int offset){
         long started=SystemClock.elapsedRealtime();List<float[]> regions=detect(input.bitmap);
-        List<LiveTracker.Detection> hits=new ArrayList<>();if(regions.isEmpty())return hits;
+        List<LiveTracker.Detection> hits=new ArrayList<>();List<TextClue> clues=new ArrayList<>();if(regions.isEmpty())return hits;
         int start=(offset*7)%regions.size();
         for(int i=0;i<Math.min(24,regions.size())&&valid.getAsBoolean();i++){
-            if(i>0&&SystemClock.elapsedRealtime()-started>1800)break;
+            if(i>0&&SystemClock.elapsedRealtime()-started>1100)break;
             float[] q=regions.get((start+i)%regions.size());Bitmap crop=rectify(input.bitmap,q);
             try{
-                Reading normal=recognise(crop);Matrix turn=new Matrix();turn.postRotate(180);
-                Bitmap flipped=Bitmap.createBitmap(crop,0,0,crop.getWidth(),crop.getHeight(),turn,true);Reading reverse;
-                try{reverse=recognise(flipped);}finally{if(flipped!=crop)flipped.recycle();}
-                // Do not pick the direction by its similarity to the wanted list.
-                Reading chosen=reverse.confidence>normal.confidence?reverse:normal;
-                if(chosen.confidence<.50||chosen.text.isBlank()||chosen.text.length()>500)continue;
+                Reading chosen=recognise(crop);
+                // A very clear reading needs no second inference. Otherwise try the other direction.
+                if(chosen.confidence<.93){
+                    Matrix turn=new Matrix();turn.postRotate(180);
+                    Bitmap flipped=Bitmap.createBitmap(crop,0,0,crop.getWidth(),crop.getHeight(),turn,true);
+                    try{Reading reverse=recognise(flipped);if(reverse.confidence>chosen.confidence)chosen=reverse;}
+                    finally{if(flipped!=crop)flipped.recycle();}
+                }
+                if(chosen.confidence<.35||chosen.text.isBlank()||chosen.text.length()>500)continue;
                 float[] mapped=q.clone();input.toSource.mapPoints(mapped);
-                List<Matcher.Match> matches=matcher.find(chosen.text,books);
-                boolean ambiguous=matches.size()>1&&matches.get(1).score>=matches.get(0).score-.06;
+                List<Matcher.Match> matches=new ArrayList<>(matcher.find(chosen.text,books));
+                // Join only nearby, similarly oriented lines. Keep the box anchored to the actual text.
+                for(TextClue clue:clues)if(TextNeighbour.canJoin(clue.quad,mapped)){
+                    mergeMatches(matches,matcher.find(clue.text+" "+chosen.text,books));
+                    mergeMatches(matches,matcher.find(chosen.text+" "+clue.text,books));
+                }
+                clues.add(new TextClue(chosen.text,mapped));
                 for(Matcher.Match match:matches){
                     if(hits.size()>=20)break;
-                    boolean strong=match.strong&&chosen.confidence>=.80&&!ambiguous;
-                    LiveTracker.Detection d=new LiveTracker.Detection(match.book.id,match.book.label(),ambiguous?"Possible — multiple wanted entries":match.reason,mapped,strong);
+                    boolean strong=match.strong;
+                    LiveTracker.Detection d=new LiveTracker.Detection(match.book.id,match.book.label(),match.reason,mapped,strong);
                     int duplicate=-1;
                     for(int k=0;k<hits.size();k++)if(hits.get(k).id.equals(d.id)&&Geometry.overlap(LiveTracker.bounds(mapped),LiveTracker.bounds(hits.get(k).quad))>.3){duplicate=k;break;}
                     if(duplicate<0)hits.add(d);else if(strong&&!hits.get(duplicate).strong)hits.set(duplicate,d);
@@ -85,6 +93,16 @@ final class OcrReader implements AutoCloseable {
         }
         if(valid.getAsBoolean())publish.accept(List.copyOf(hits));return hits;
     }
+    private static final class TextClue {
+        final String text;final float[] quad;
+        TextClue(String text,float[] quad){this.text=text;this.quad=quad;}
+    }
+    private static void mergeMatches(List<Matcher.Match> into,List<Matcher.Match> extra){
+        for(Matcher.Match m:extra){
+            int at=-1;for(int i=0;i<into.size();i++)if(into.get(i).book.id.equals(m.book.id)){at=i;break;}
+            if(at<0)into.add(m);else if(m.score>into.get(at).score)into.set(at,m);
+        }
+    }
     private List<float[]> detect(Bitmap bitmap){
         float scale=Math.min(1,1280f/Math.max(bitmap.getWidth(),bitmap.getHeight()));
         int w=Math.max(32,Math.round(bitmap.getWidth()*scale/32)*32),h=Math.max(32,Math.round(bitmap.getHeight()*scale/32)*32);
@@ -93,7 +111,7 @@ final class OcrReader implements AutoCloseable {
         List<MatOfPoint> contours=new ArrayList<>();List<float[]> result=new ArrayList<>();
         try{
             probability.put(0,0,Arrays.copyOfRange(output,2,output.length));
-            Imgproc.threshold(probability,binary,.3,255,Imgproc.THRESH_BINARY);binary.convertTo(binary,CvType.CV_8UC1);
+            Imgproc.threshold(probability,binary,.2,255,Imgproc.THRESH_BINARY);binary.convertTo(binary,CvType.CV_8UC1);
             Imgproc.findContours(binary,contours,hierarchy,Imgproc.RETR_LIST,Imgproc.CHAIN_APPROX_SIMPLE);
             contours.sort(Comparator.comparingDouble((MatOfPoint c)->Imgproc.contourArea(c)).reversed());
             for(int i=0;i<Math.min(300,contours.size())&&result.size()<96;i++){
@@ -103,7 +121,7 @@ final class OcrReader implements AutoCloseable {
                 MatOfPoint2f points=new MatOfPoint2f(contour.toArray());
                 try{
                     Imgproc.drawContours(mask,List.of(contour),0,Scalar.all(255),-1,Imgproc.LINE_8,empty,0,new org.opencv.core.Point(-bounds.x,-bounds.y));
-                    if(org.opencv.core.Core.mean(local,mask).val[0]<.50)continue;
+                    if(org.opencv.core.Core.mean(local,mask).val[0]<.40)continue;
                     RotatedRect rect=Imgproc.minAreaRect(points);double a=rect.size.width,b=rect.size.height;
                     if(Math.min(a,b)<3)continue;
                     // Rectangular DB expansion, area * unclip ratio / perimeter on each side.

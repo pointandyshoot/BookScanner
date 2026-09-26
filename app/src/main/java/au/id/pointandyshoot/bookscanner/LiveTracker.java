@@ -1,7 +1,6 @@
 package au.id.pointandyshoot.bookscanner;
 
 import au.id.pointandyshoot.bookscanner.core.Geometry;
-import au.id.pointandyshoot.bookscanner.core.Confirmation;
 import org.opencv.core.*;
 import org.opencv.imgproc.Imgproc;
 import org.opencv.video.Video;
@@ -16,12 +15,12 @@ final class LiveTracker implements AutoCloseable {
         Detection(String id,String label,String reason,float[] quad,boolean strong){this.id=id;this.label=label;this.reason=reason;this.quad=quad.clone();this.strong=strong;}
     }
     static final class Visible {
-        final Detection detection;final boolean repeated,tracking;final String appearanceId;
-        Visible(Detection d,boolean repeated,boolean tracking,String appearanceId){detection=d;this.repeated=repeated;this.tracking=tracking;this.appearanceId=appearanceId;}
+        final Detection detection;final boolean tracking;final String appearanceId;
+        Visible(Detection d,boolean tracking,String appearanceId){detection=d;this.tracking=tracking;this.appearanceId=appearanceId;}
     }
     private static final class Track {
-        Detection detection;float[] quad;Mat template;long lastGood,lastRead,lastReadSequence;final Confirmation confirmation=new Confirmation();String appearanceId;
-        Track(Detection d,float[] q,Mat t,long now,long seq){detection=d;quad=q;template=t;lastGood=lastRead=now;lastReadSequence=seq;confirmation.observe(seq,now,d.strong);}
+        Detection detection;float[] quad;Mat template;long lastGood,lastRead,lastReadSequence;String appearanceId;
+        Track(Detection d,float[] q,Mat t,long now,long seq){detection=d;quad=q;template=t;lastGood=lastRead=now;lastReadSequence=seq;}
     }
     private static final class Lost {
         final String entry,key;final float[] quad;final long at;
@@ -87,7 +86,6 @@ final class LiveTracker implements AutoCloseable {
                 Track existing=null;
                 for(Track t:tracks)if(t.detection.id.equals(d.id)&&Geometry.overlap(bounds(t.quad),bounds(q))>.12){existing=t;break;}
                 if(existing!=null){
-                    existing.confirmation.observe(captureSequence,capturedAt,d.strong);
                     existing.template.release();existing.template=template;existing.quad=q;existing.lastGood=now;
                     existing.lastRead=capturedAt;existing.lastReadSequence=captureSequence;
                     if(d.strong||!existing.detection.strong)existing.detection=d;
@@ -104,12 +102,12 @@ final class LiveTracker implements AutoCloseable {
     List<Visible> visible(){
         if(previous==null)return List.of();List<Visible> result=new ArrayList<>();
         for(Track t:tracks)result.add(new Visible(new Detection(t.detection.id,t.detection.label,t.detection.reason,
-                scale(t.quad,(float)sourceWidth/previous.cols(),(float)sourceHeight/previous.rows()),t.detection.strong),t.confirmation.confirmed(),now-t.lastGood<150,t.appearanceId));
+                scale(t.quad,(float)sourceWidth/previous.cols(),(float)sourceHeight/previous.rows()),t.detection.strong),now-t.lastGood<150,t.appearanceId));
         return result;
     }
     float[] recheckRegion(){
         if(previous==null)return null;
-        Track oldest=null;for(Track t:tracks)if(now-t.lastRead>(t.confirmation.confirmed()?2500:600)&&(oldest==null||t.lastRead<oldest.lastRead))oldest=t;
+        Track oldest=null;for(Track t:tracks)if(now-t.lastRead>4000&&(oldest==null||t.lastRead<oldest.lastRead))oldest=t;
         return oldest==null?null:bounds(scale(oldest.quad,(float)sourceWidth/previous.cols(),(float)sourceHeight/previous.rows()));
     }
     private float[] replay(float[] q,long from){
