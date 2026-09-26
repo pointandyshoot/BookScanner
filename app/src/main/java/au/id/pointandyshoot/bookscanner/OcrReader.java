@@ -38,7 +38,7 @@ final class OcrReader implements AutoCloseable {
               BooleanSupplier valid,Consumer<List<LiveTracker.Detection>> publish) throws Exception {
         if(session!=token){step=0;detailStep=0;session=token;}
         initialise();int w=upright.getWidth(),h=upright.getHeight();Rect region=new Rect(0,0,w,h);
-        // Alternate coverage and native-resolution detail. Revisit tentative tracks preferentially.
+        // Prioritise discovery at native detail; existing hints get only occasional rereads.
         if(step%4!=0){
             if(recheck!=null&&step%12==11){
                 int pad=Math.max(48,Math.round(Math.max(recheck[2]-recheck[0],recheck[3]-recheck[1])*.25f));

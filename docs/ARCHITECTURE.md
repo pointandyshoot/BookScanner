@@ -1,31 +1,20 @@
 # Architecture (0.4)
 
-Version 0.4 supersedes the confirmation and scheduling rules below: one immediate orange hint; no Confirmation state. Detail discovery uses nine overlapping 45%-size tiles, three detail passes per full view, with a targeted reread at most once per twelve jobs. OCR acceptance is 0.35, detector contour confidence 0.40, binary threshold 0.20. Nearby parallel text lines may be paired for matching. The per-region soft budget is 1.1 seconds. Very clear readings (0.93) skip reverse recognition. Tracking, lifecycle and offline persistence remain as described.
+## Discovery and recognition
 
-## Previous 0.3 architecture (historical)
-# Architecture (0.3)
+CameraX supplies a requested 2560 × 1920 analysis frame with a supported-size fallback. Preview and analysis share a viewport. Analysis samples a grayscale tracking image up to 640 pixels on its long edge; the full-detail upright luminance image is copied only when the separate OCR executor is idle. One OCR job runs at a time, and session generations reject obsolete results.
 
-## Concurrent pipeline
+The PP-OCRv4 Mobile detector and recogniser run offline using pinned NCNN source and verified bundled weights. NCNN uses two CPU threads and packed SIMD layouts; FP16 and Vulkan remain disabled. Detector input is capped at 1280 pixels on its long edge. Its probability-map threshold is 0.20 and contour confidence cut-off is 0.40. Rotated rectangles are expanded and rectified from the source into 48-pixel-high recognition strips. This handles rotation, not all perspective distortion or curved spines.
 
-`CameraX ImageAnalysis` uses `KEEP_ONLY_LATEST` at a requested 2560 × 1920, with a supported-size fallback and higher-resolution preference. It shares a viewport with `PreviewView` in `FIT_CENTER` mode. Sensor rotation and crop are applied to both analysis representations.
+Three detail passes alternate with one full-view pass. Detail discovery cycles through nine overlapping 45%-size tiles. A tracked region may receive a reread once per twelve jobs, if its last reading is at least four seconds old. Existing hints therefore do not monopolise the detail lane.
 
-The analysis executor samples a maximum 640-pixel-long-edge grayscale tracking image directly from the Y plane, respecting row/pixel stride. It aims for a 65 ms interval (120 ms when warm). It closes each camera proxy after copying, without waiting for OCR. `LiveTracker` owns its native Mats exclusively on this thread.
+Each job visits up to 24 regions, rotating the start index. A 1.1-second soft budget is checked between regions; an individual inference cannot be interrupted. Recognition tries the opposite reading direction unless the first reading has confidence at least 0.93. Direction is chosen by OCR confidence independently of wanted text. Nonblank readings with confidence at least 0.35 enter matching.
 
-When the OCR executor is idle, the analyser copies an upright full-detail image and gives ownership to that worker. Jobs alternate full-view detection and detail-region detection. Every pass can publish results immediately through a single replaceable pending batch. There is no unbounded image/job queue. Session generations reject callbacks after pause, navigation, list changes, recreation or shutdown. Bitmap ownership is released in `finally`, and the recogniser is closed after the OCR worker drains.
+## Immediate hints
 
-## Small and angled text
+One orange box means a possible match for the user to inspect. There is no multi-frame confirmation state. Exact distinctive four-letter words, fuzzy five-letter-or-longer fragments and whole-name/title similarity can create hints. Common publishing words are excluded from fragment matching and short titles require exact whole words. Author clues for a specific title are labelled “check title”. Internal strong evidence only prefers a more complete label; it never controls visibility or colour.
 
-`ReadingImage` combines crop, optional enlargement, arbitrary rotation and translation into one Android matrix, with a white border. Its inverse maps OCR corner polygons back into the upright full-detail image. The overlay draws these polygons rather than an axis-aligned rectangle that loses text orientation.
-
-`OcrReader` owns PP-OCRv4 Mobile through JNI. NCNN is built from pinned source. BGR detector input uses ImageNet normalisation and dimensions divisible by 32; recognition strips are 48 pixels high and normalised to [-1,1]. CTC decoding uses the exact 6,625-class dictionary. Loading/output shapes are checked; no ML Kit fallback is retained.
-
-DB probability-map contours are scored, fitted to rotated rectangles and expanded by area × 1.5 / perimeter. Crops are rectified from the higher-resolution source. Both reading directions are checked; OCR confidence selects orientation independently of wanted entries. This handles arbitrary rotation, not all curved-spine/perspective distortion. Unrelated text regions are never stitched together.
-
-Four overlapping 65%-size tiles retain native detail. Tentative tracks are eligible for rereads after 600 ms, confirmed tracks after 2.5 seconds. Full-view jobs continue between detail jobs. A job processes up to 24 regions and checks a 1.8-second soft budget between them. Individual inference cannot be interrupted. Starting regions rotate to avoid starving later text.
-
-Orange indicates fuzzy/partial matching. A distinctive token can suggest a longer title/author, but remains weak. Short titles require exact whole words. Author-only clues for a specific title remain weak. Similarly scored competing entries also remain tentative.
-
-Each visual track owns `Confirmation`: three strong observations from distinct frames within five seconds are needed for green. Strong means title similarity >= 0.88 or author-wildcard similarity >= 0.90, plus OCR confidence >= 0.80 and no close competitor. Crops/callbacks from one frame count once; weak readings and optical flow do not count. Green persists while the same texture remains tracked. Reacquisition starts confirmation anew.
+Nearby similarly oriented lines can be paired within one OCR pass. Geometric checks limit centre displacement, angle and height mismatch. Paired evidence stays anchored to the current text region rather than inventing a whole-book boundary. It is a heuristic and may join neighbouring spines; the user has chosen higher recall with more false positives.
 
 ## Tracking and late results
 

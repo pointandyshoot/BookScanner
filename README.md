@@ -53,6 +53,7 @@ Windows: use `gradlew.bat`. The Gradle 8.13 wrapper is included; Android Gradle 
 - Three detail passes per full-view pass, using a 3 × 3 grid of overlapping 45%-size crops. Tracked books get only occasional rereads so they do not monopolise discovery.
 - Lower detector and OCR confidence cut-offs. Very clear readings skip the reverse-direction inference. Work is checked against a 1.1-second soft budget between regions; individual inference can exceed this.
 - Existing independent optical-flow tracking and once-per-appearance haptics retained.
+- NCNN packed CPU layouts enabled; FP16 and GPU execution remain disabled.
 - PP-OCRv4 remains offline. Pixel 10 shelf recall and speed are unmeasured until a phone trial.
 
 ## Privacy and storage

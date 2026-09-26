@@ -15,7 +15,7 @@ struct Engine {
             net->opt.use_vulkan_compute=false;
             net->opt.use_fp16_arithmetic=false;
             net->opt.use_fp16_storage=false;
-            net->opt.use_packing_layout=false;
+            net->opt.use_packing_layout=true;
         }
     }
 };
