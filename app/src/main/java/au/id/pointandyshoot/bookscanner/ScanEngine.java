@@ -12,8 +12,8 @@ import java.util.concurrent.atomic.*;
 /** Fast camera/tracking lane plus one bounded, independent OCR lane. */
 final class ScanEngine implements ImageAnalysis.Analyzer {
     static final class Hit {
-        final float[] quad;final RectF box;final String label,reason;final boolean repeated,tracking;
-        Hit(LiveTracker.Visible v){quad=v.detection.quad.clone();float[] b=LiveTracker.bounds(quad);box=new RectF(b[0],b[1],b[2],b[3]);label=v.detection.label;reason=v.detection.reason;repeated=v.repeated;tracking=v.tracking;}
+        final float[] quad;final RectF box;final String label,reason;final boolean tracking;
+        Hit(LiveTracker.Visible v){quad=v.detection.quad.clone();float[] b=LiveTracker.bounds(quad);box=new RectF(b[0],b[1],b[2],b[3]);label=v.detection.label;reason=v.detection.reason;tracking=v.tracking;}
     }
     interface Listener {void result(List<Hit> hits,int width,int height,long at,String status,int generation,boolean newAppearance);}
     private static final class Batch {
@@ -21,7 +21,7 @@ final class ScanEngine implements ImageAnalysis.Analyzer {
         Batch(List<LiveTracker.Detection> hits,VisionFrames.Gray capture,long sequence,long time,int token){this.hits=hits;this.capture=capture;this.sequence=sequence;this.time=time;this.token=token;}
     }
     private final ExecutorService analysisExecutor,ocrExecutor=Executors.newSingleThreadExecutor();
-    private final OcrReader reader=new OcrReader();
+    private final OcrReader reader;
     private final LiveTracker tracker=new LiveTracker();
     private final AppearanceGate appearance=new AppearanceGate();
     private final AtomicInteger generation=new AtomicInteger();
@@ -36,7 +36,7 @@ final class ScanEngine implements ImageAnalysis.Analyzer {
     private int activeGeneration=-1;
     private final boolean visionReady;
 
-    ScanEngine(Listener listener,ExecutorService analysisExecutor){this.listener=listener;this.analysisExecutor=analysisExecutor;visionReady=NativeVision.initialise();}
+    ScanEngine(android.content.res.AssetManager assets,Listener listener,ExecutorService analysisExecutor){reader=new OcrReader(assets);this.listener=listener;this.analysisExecutor=analysisExecutor;visionReady=NativeVision.initialise();}
     void setBooks(List<WantedBook> entries){books=List.copyOf(entries);invalidate();}
     void setEnabled(boolean enabled){this.enabled=enabled;invalidate();}
     void setSpineMode(boolean enabled){spineMode=enabled;}
@@ -66,8 +66,8 @@ final class ScanEngine implements ImageAnalysis.Analyzer {
             for(LiveTracker.Visible v:tracker.visible()){hits.add(new Hit(v));present.add(v.appearanceId);}
             boolean alert=appearance.update(present,now);
             if(enabled&&token==generation.get())listener.result(hits,gray.sourceWidth,gray.sourceHeight,now,
-                    !hits.isEmpty()?"Potential match — tracking highlighted text":!lastError.isEmpty()?lastError:
-                    thermal>=3?"Phone warm — detail reads slowed":"Sweep slowly • tap to focus • angled text enabled",token,alert);
+                    !hits.isEmpty()?"Highlighted books may match — check the spine":!lastError.isEmpty()?lastError:
+                    thermal>=3?"Phone warm — detail reads slowed":"PP-OCRv4 • sweep slowly • tap to focus",token,alert);
             if(now-lastOcr<(thermal>=3?1100:250)||!busy.compareAndSet(false,true))return;
             try{original=ImagePrep.uprightLuma(image);}catch(RuntimeException e){busy.set(false);throw e;}
             final Bitmap captureBitmap=original;final List<WantedBook> wanted=books;
@@ -78,7 +78,8 @@ final class ScanEngine implements ImageAnalysis.Analyzer {
                     if(valid(token))reader.read(captureBitmap,wanted,token,crops,recheck,()->valid(token),
                             detections->{if(valid(token))pending.set(new Batch(detections,gray,seq,now,token));});
                     lastError="";
-                }catch(Exception error){if(valid(token))lastError="Couldn’t read text — hold steady or improve lighting";}
+                }catch(LinkageError error){if(valid(token))lastError="PP-OCRv4 could not load — reinstall the app";}
+                catch(Exception error){if(valid(token))lastError="PP-OCRv4 read failed — pause and try again";}
                 finally{captureBitmap.recycle();busy.set(false);}
             });
             original=null; // Ownership transferred to the OCR worker.

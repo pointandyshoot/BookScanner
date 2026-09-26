@@ -1,0 +1,6 @@
+[submodule "third_party/ncnn"]
+	path = third_party/ncnn
+	url = https://github.com/Tencent/ncnn.git
+[submodule "third_party/ppocr-models"]
+	path = third_party/ppocr-models
+	url = https://github.com/FeiGeChuanShu/ncnn_ppstructure.git

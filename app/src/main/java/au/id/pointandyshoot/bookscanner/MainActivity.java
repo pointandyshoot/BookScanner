@@ -55,7 +55,7 @@ public final class MainActivity extends ComponentActivity {
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
         store=new WantedStore(this);
-        scanner=new ScanEngine((hits,w,h,time,message,generation,newAppearance)->runOnUiThread(()->{
+        scanner=new ScanEngine(getAssets(),(hits,w,h,time,message,generation,newAppearance)->runOnUiThread(()->{
             if(destroyed || !resumed || listScreen || paused || generation!=scanner.generation())return;
             if(overlay!=null)overlay.update(hits,w,h,time);
             if(status!=null)status.setText(message);
@@ -198,8 +198,8 @@ public final class MainActivity extends ComponentActivity {
                     if(i==0)getPreferences(0).edit().putBoolean("haptics",checked).apply();
                     else {getPreferences(0).edit().putBoolean("spines",checked).apply();scanner.setSpineMode(checked);}})
                 .setPositiveButton("Done",null).setNeutralButton("About",(d,w)->new AlertDialog.Builder(this)
-                        .setTitle("BookScanner 0.2")
-                        .setMessage("Offline ML Kit text recognition. Live visual tracking and optional detection vibration. No saved photos or scan history.\n\nPreprocessing inspired by Sappelen/BookSpineScanner (CC0 1.0). Independently implemented for Android.\n\nGoogle ML Kit is governed by Google’s ML Kit terms. AndroidX and OpenCV: Apache 2.0. See repository notices for source links.")
+                        .setTitle("BookScanner 0.3")
+                        .setMessage("Offline PP-OCRv4 Mobile recognition with NCNN. One orange highlight: a possible match for you to check. Live visual tracking and optional detection vibration. No saved photos or scan history.\n\nPreprocessing inspired by Sappelen/BookSpineScanner (CC0 1.0). Independently implemented for Android.\n\nPaddleOCR, AndroidX and OpenCV: Apache 2.0. NCNN: BSD 3-Clause. See repository notices for source links.")
                         .setPositiveButton("Done",null).show()).show();
     }
     private void signalDetection(){

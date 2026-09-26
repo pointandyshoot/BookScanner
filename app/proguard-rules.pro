@@ -1,1 +1,1 @@
-# AndroidX and ML Kit provide their own consumer rules.
+-keep class au.id.pointandyshoot.bookscanner.PpOcrNative { *; }

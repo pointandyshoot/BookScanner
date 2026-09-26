@@ -1,20 +1,20 @@
-# Architecture (0.2)
+# Architecture (0.4)
 
-## Concurrent pipeline
+## Discovery and recognition
 
-`CameraX ImageAnalysis` uses `KEEP_ONLY_LATEST` at a requested 2560 × 1920, with a supported-size fallback and higher-resolution preference. It shares a viewport with `PreviewView` in `FIT_CENTER` mode. Sensor rotation and crop are applied to both analysis representations.
+CameraX supplies a requested 2560 × 1920 analysis frame with a supported-size fallback. Preview and analysis share a viewport. Analysis samples a grayscale tracking image up to 640 pixels on its long edge; the full-detail upright luminance image is copied only when the separate OCR executor is idle. One OCR job runs at a time, and session generations reject obsolete results.
 
-The analysis executor samples a maximum 640-pixel-long-edge grayscale tracking image directly from the Y plane, respecting row/pixel stride. It aims for a 65 ms interval (120 ms when warm). It closes each camera proxy after copying, without waiting for OCR. `LiveTracker` owns its native Mats exclusively on this thread.
+The PP-OCRv4 Mobile detector and recogniser run offline using pinned NCNN source and verified bundled weights. NCNN uses two CPU threads and packed SIMD layouts; FP16 and Vulkan remain disabled. Detector input is capped at 1280 pixels on its long edge. Its probability-map threshold is 0.20 and contour confidence cut-off is 0.40. Rotated rectangles are expanded and rectified from the source into 48-pixel-high recognition strips. This handles rotation, not all perspective distortion or curved spines.
 
-When the OCR executor is idle, the analyser copies an upright full-detail image and gives ownership to that worker. One job performs a full-view read plus one detail-region read. Every pass can publish results immediately through a single replaceable pending batch. There is no unbounded image/job queue. Session generations reject callbacks after pause, navigation, list changes, recreation or shutdown. Bitmap ownership is released in `finally`, and the recogniser is closed after the OCR worker drains.
+Three detail passes alternate with one full-view pass. Detail discovery cycles through nine overlapping 45%-size tiles. A tracked region may receive a reread once per twelve jobs, if its last reading is at least four seconds old. Existing hints therefore do not monopolise the detail lane.
 
-## Small and angled text
+Each job visits up to 24 regions, rotating the start index. A 1.1-second soft budget is checked between regions; an individual inference cannot be interrupted. Recognition tries the opposite reading direction unless the first reading has confidence at least 0.93. Direction is chosen by OCR confidence independently of wanted text. Nonblank readings with confidence at least 0.35 enter matching.
 
-`ReadingImage` combines crop, optional enlargement, arbitrary rotation and translation into one Android matrix, with a white border. Its inverse maps OCR corner polygons back into the upright full-detail image. The overlay draws these polygons rather than an axis-aligned rectangle that loses text orientation.
+## Immediate hints
 
-`ReadingSchedule` preserves right-angle discovery (90°, 180°, 270°, 0°) and exploration even after a success. Each job also uses a local tilt estimate from Canny/Hough line segments, modulo 90°. Estimates are continuous angles. A detail region can have a different tilt from the full shelf. With no reliable estimate, fixed ±15°, ±30°, ±45° offsets supplement the coarse angles. This is a bounded search, not exhaustive perspective rectification.
+One orange box means a possible match for the user to inspect. There is no multi-frame confirmation state. Exact distinctive four-letter words, fuzzy five-letter-or-longer fragments and whole-name/title similarity can create hints. Common publishing words are excluded from fragment matching and short titles require exact whole words. Author clues for a specific title are labelled “check title”. Internal strong evidence only prefers a more complete label; it never controls visibility or colour.
 
-Four 65%-size overlapping tiles retain native image detail; their schedule is offset from the orientation schedule so a tile is not locked to one quadrant. A previously detected region can receive a targeted reread after 2.5 seconds. Optional spine strips replace some detail tiles; they never disable full-view discovery. OCR retains the bundled ML Kit Latin recogniser and the existing local fuzzy title/author/alias matcher. No cloud model or book database is queried. Enlargement does not create missing source detail.
+Nearby similarly oriented lines can be paired within one OCR pass. Geometric checks limit centre displacement, angle and height mismatch. Paired evidence stays anchored to the current text region rather than inventing a whole-book boundary. It is a heuristic and may join neighbouring spines; the user has chosen higher recall with more false positives.
 
 ## Tracking and late results
 
@@ -40,7 +40,8 @@ The version 1 JSON format is unchanged: `version: 1`, `books: []`, with each ent
 
 ## References
 
-- [ML Kit input image guidelines](https://developers.google.com/ml-kit/vision/text-recognition/v2/android#input-image-guidelines): recognition depends on the number of pixels per character, focus and image quality.
+- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR/tree/v2.7.0)
+- [NCNN](https://github.com/Tencent/ncnn)
 - [OpenCV Android setup](https://docs.opencv.org/4.x/d5/df8/tutorial_dev_with_OCV_on_Android.html)
 - [OpenCV pyramidal optical flow](https://docs.opencv.org/4.x/javadoc/org/opencv/video/Video.html)
 - [OpenCV robust affine estimation](https://docs.opencv.org/4.x/javadoc/org/opencv/calib3d/Calib3d.html)
