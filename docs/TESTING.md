@@ -1,8 +1,8 @@
-# Version 0.4 verification
+# Version 0.4.1 verification
 
 CI runs unit tests, lint, debug/release builds and Android emulator tests.
 
-Regression coverage includes four/five-letter surname clues, OCR errors, common-word rejection, short-title false positives, nearby line pairing, first-frame weak highlights, duplicate callbacks, optical-flow movement/loss and bundled OCR on angled and split-name synthetic scenes.
+Regression coverage includes delayed OCR handoff and full OCR-to-tracker output, as well as four/five-letter surname clues, OCR errors, common-word rejection, short-title false positives, nearby line pairing, first-frame weak highlights, duplicate callbacks, optical-flow movement/loss and bundled OCR on angled and split-name synthetic scenes.
 
 The earlier three-frame confirmation tests are removed because confirmation no longer controls highlighting. Synthetic OCR tests do not establish real-shelf recall or Pixel 10 latency.
 

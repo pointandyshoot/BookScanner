@@ -49,4 +49,25 @@ public class AngledOcrTest {
             assertFalse("A split author name should produce an immediate hint",hits.isEmpty());
         }finally{scene.recycle();}
     }
+    @Test public void recognisedAuthorReachesOverlayAfterSlowOcr() throws Exception {
+        Bitmap scene=Bitmap.createBitmap(1920,1440,Bitmap.Config.ARGB_8888);
+        Canvas canvas=new Canvas(scene);canvas.drawColor(Color.WHITE);
+        Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);paint.setColor(Color.BLACK);
+        paint.setTypeface(Typeface.create("sans-serif",Typeface.BOLD));paint.setTextSize(42);
+        canvas.drawText("TERRY PRATCHETT",550,700,paint);
+        WantedBook wanted=new WantedBook("handoff-example","*","Terry Pratchett",List.of(),true);
+        try(OcrReader reader=new OcrReader(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().getTargetContext().getAssets());
+            LiveTracker tracker=new LiveTracker()){
+            List<LiveTracker.Detection> hits=reader.readAtAngle(scene,new Rect(0,0,1920,1440),0,1,List.of(wanted));
+            assertFalse("OCR should recognise the author",hits.isEmpty());
+            Bitmap small=Bitmap.createScaledBitmap(scene,640,480,true);
+            int[] pixels=new int[640*480];small.getPixels(pixels,0,640,0,0,640,480);small.recycle();
+            byte[] luma=new byte[pixels.length];for(int i=0;i<pixels.length;i++)luma[i]=(byte)Color.red(pixels[i]);
+            VisionFrames.Gray frame=new VisionFrames.Gray(luma,640,480,1920,1440);
+            tracker.frame(frame,1,0);
+            for(int i=2;i<=66;i++)tracker.frame(frame,i,i*65);
+            assertTrue("OCR result should reach a visible track",tracker.detections(hits,frame,1,0)>0);
+            assertFalse(tracker.visible().isEmpty());
+        }finally{scene.recycle();}
+    }
 }

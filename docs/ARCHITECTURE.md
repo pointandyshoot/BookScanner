@@ -1,4 +1,4 @@
-# Architecture (0.4)
+# Architecture (0.4.1)
 
 ## Discovery and recognition
 
@@ -8,7 +8,9 @@ The PP-OCRv4 Mobile detector and recogniser run offline using pinned NCNN source
 
 Three detail passes alternate with one full-view pass. Detail discovery cycles through nine overlapping 45%-size tiles. A tracked region may receive a reread once per twelve jobs, if its last reading is at least four seconds old. Existing hints therefore do not monopolise the detail lane.
 
-Each job visits up to 24 regions, rotating the start index. A 1.1-second soft budget is checked between regions; an individual inference cannot be interrupted. Recognition tries the opposite reading direction unless the first reading has confidence at least 0.93. Direction is chosen by OCR confidence independently of wanted text. Nonblank readings with confidence at least 0.35 enter matching.
+Each job visits up to 24 regions, rotating the start index. After detection finishes, a 1.2-second soft recognition budget is checked after the first four regions; individual inference cannot be interrupted. Recognition tries the opposite reading direction unless the first reading has confidence at least 0.93. Direction is chosen by OCR confidence independently of wanted text. Nonblank readings with confidence at least 0.35 enter matching.
+
+Late OCR results can use up to eight seconds of bounded motion history. A current texture comparison rejects moved or vanished regions. Mild camera noise or exposure shifts can still be treated as stationary when motion fitting fails. Optional scan diagnostics expose the detected/visited/read/matched counts and overlay acceptance, without storing the camera image or OCR text.
 
 ## Immediate hints
 
@@ -22,7 +24,7 @@ Each displayed track retains its wanted-entry identity, oriented polygon and a 9
 
 A track has no fixed lifetime while visual checks succeed. Failed checks allow up to one second of faded grace; later failure removes it. This is texture tracking, not semantic proof the object is a book. Blank or changed scenes must not keep a box alive. A heartbeat watchdog clears the overlay if analysis itself stalls for 600 ms; this is independent of OCR latency.
 
-A bounded three-second / 60-step camera-motion history maps late OCR polygons forward. Results must have a continuous reliable transform path and match their capture-time reference texture in the current frame. Results too old, from a reset session, or from an untraceable movement are rejected. This avoids displaying stale coordinates while permitting OCR calls longer than the former 700 ms cutoff.
+A bounded eight-second / 180-step camera-motion history maps late OCR polygons forward. Results must have a continuous reliable transform path and match their capture-time reference texture in the current frame. Results too old, from a reset session, or from an untraceable movement are rejected. This avoids displaying stale coordinates while permitting OCR calls longer than the former 700 ms cutoff.
 
 ## Appearance signalling
 

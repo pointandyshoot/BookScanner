@@ -137,6 +137,7 @@ public final class MainActivity extends ComponentActivity {
         });
         root.addView(text("Boxes follow detected text • Gentle buzz on arrival\nTap to focus. Check highlighted books yourself.",12));
         scanner.setBooks(books);scanner.setSpineMode(getPreferences(0).getBoolean("spines",false));
+        scanner.setDiagnostics(getPreferences(0).getBoolean("diagnostics",false));
         if(resumed)preview.post(this::startCamera);
     }
     private void startCamera(){
@@ -193,14 +194,19 @@ public final class MainActivity extends ComponentActivity {
     private void options(){
         boolean current=getPreferences(0).getBoolean("spines",false);
         new AlertDialog.Builder(this).setTitle("Scanning options")
-                .setMultiChoiceItems(new String[]{"Gentle vibration on new detection","Experimental spine crops (may miss books)"},
-                        new boolean[]{getPreferences(0).getBoolean("haptics",true),current},(d,i,checked)->{
+                .setMultiChoiceItems(new String[]{"Gentle vibration on new detection","Experimental spine crops (may miss books)","Show scan diagnostics"},
+                        new boolean[]{getPreferences(0).getBoolean("haptics",true),current,getPreferences(0).getBoolean("diagnostics",false)},(d,i,checked)->{
                     if(i==0)getPreferences(0).edit().putBoolean("haptics",checked).apply();
-                    else {getPreferences(0).edit().putBoolean("spines",checked).apply();scanner.setSpineMode(checked);}})
+                    else if(i==1){getPreferences(0).edit().putBoolean("spines",checked).apply();scanner.setSpineMode(checked);}
+                    else {getPreferences(0).edit().putBoolean("diagnostics",checked).apply();scanner.setDiagnostics(checked);}})
                 .setPositiveButton("Done",null).setNeutralButton("About",(d,w)->new AlertDialog.Builder(this)
-                        .setTitle("BookScanner 0.3")
+                        .setTitle("BookScanner "+versionName())
                         .setMessage("Offline PP-OCRv4 Mobile recognition with NCNN. One orange highlight: a possible match for you to check. Live visual tracking and optional detection vibration. No saved photos or scan history.\n\nPreprocessing inspired by Sappelen/BookSpineScanner (CC0 1.0). Independently implemented for Android.\n\nPaddleOCR, AndroidX and OpenCV: Apache 2.0. NCNN: BSD 3-Clause. See repository notices for source links.")
                         .setPositiveButton("Done",null).show()).show();
+    }
+    private String versionName(){
+        try{return getPackageManager().getPackageInfo(getPackageName(),PackageManager.PackageInfoFlags.of(0)).versionName;}
+        catch(PackageManager.NameNotFoundException e){return "unknown";}
     }
     private void signalDetection(){
         long now=SystemClock.elapsedRealtime();

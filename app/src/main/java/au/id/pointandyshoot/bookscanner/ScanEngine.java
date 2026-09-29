@@ -32,6 +32,9 @@ final class ScanEngine implements ImageAnalysis.Analyzer {
     private volatile boolean enabled,closing,spineMode;
     private volatile int thermal;
     private volatile String lastError="";
+    private volatile OcrReader.Stats ocrStats;
+    private volatile boolean diagnostics;
+    private volatile int lastMatches,lastApplied;
     private long lastFrame,lastOcr,sequence;
     private int activeGeneration=-1;
     private final boolean visionReady;
@@ -40,11 +43,12 @@ final class ScanEngine implements ImageAnalysis.Analyzer {
     void setBooks(List<WantedBook> entries){books=List.copyOf(entries);invalidate();}
     void setEnabled(boolean enabled){this.enabled=enabled;invalidate();}
     void setSpineMode(boolean enabled){spineMode=enabled;}
+    void setDiagnostics(boolean enabled){diagnostics=enabled;}
     void setThermal(int value){thermal=value;}
     int generation(){return generation.get();}
     private void invalidate(){
         generation.incrementAndGet();pending.set(null);
-        if(!closing)analysisExecutor.execute(()->{tracker.clear();appearance.clear();lastFrame=lastOcr=0;activeGeneration=-1;});
+        if(!closing)analysisExecutor.execute(()->{tracker.clear();appearance.clear();lastFrame=lastOcr=0;activeGeneration=-1;lastMatches=lastApplied=0;ocrStats=null;});
     }
     void close(ExecutorService executor){
         enabled=false;closing=true;generation.incrementAndGet();pending.set(null);
@@ -61,13 +65,22 @@ final class ScanEngine implements ImageAnalysis.Analyzer {
             VisionFrames.Gray gray=VisionFrames.trackingImage(image);long seq=++sequence;
             tracker.frame(gray,seq,now);
             Batch batch=pending.getAndSet(null);
-            if(batch!=null&&batch.token==token)tracker.detections(batch.hits,batch.capture,batch.sequence,batch.time);
+            if(batch!=null&&batch.token==token){
+                lastMatches=batch.hits.size();
+                lastApplied=tracker.detections(batch.hits,batch.capture,batch.sequence,batch.time);
+            }
             List<Hit> hits=new ArrayList<>();Set<String> present=new HashSet<>();
             for(LiveTracker.Visible v:tracker.visible()){hits.add(new Hit(v));present.add(v.appearanceId);}
             boolean alert=appearance.update(present,now);
-            if(enabled&&token==generation.get())listener.result(hits,gray.sourceWidth,gray.sourceHeight,now,
-                    !hits.isEmpty()?"Highlighted books may match — check the spine":!lastError.isEmpty()?lastError:
-                    thermal>=3?"Phone warm — detail reads slowed":"PP-OCRv4 • sweep slowly • tap to focus",token,alert);
+            String message=!hits.isEmpty()?"Highlighted books may match — check the spine":!lastError.isEmpty()?lastError:
+                    thermal>=3?"Phone warm — detail reads slowed":"PP-OCRv4 • sweep slowly • tap to focus";
+            if(diagnostics){
+                OcrReader.Stats data=ocrStats;
+                message+="\n"+(data==null?"OCR starting":data.scope+" "+data.totalMs+" ms (detect "+data.detectorMs+") · "+
+                        data.regions+" regions / "+data.visited+" tried / "+data.readable+" read / "+data.matches+" hints")+
+                        " · overlay "+lastApplied+"/"+lastMatches;
+            }
+            if(enabled&&token==generation.get())listener.result(hits,gray.sourceWidth,gray.sourceHeight,now,message,token,alert);
             if(now-lastOcr<(thermal>=3?1100:250)||!busy.compareAndSet(false,true))return;
             try{original=ImagePrep.uprightLuma(image);}catch(RuntimeException e){busy.set(false);throw e;}
             final Bitmap captureBitmap=original;final List<WantedBook> wanted=books;
@@ -77,7 +90,7 @@ final class ScanEngine implements ImageAnalysis.Analyzer {
                 try{
                     if(valid(token))reader.read(captureBitmap,wanted,token,crops,recheck,()->valid(token),
                             detections->{if(valid(token))pending.set(new Batch(detections,gray,seq,now,token));});
-                    lastError="";
+                    if(valid(token)){ocrStats=reader.stats();lastError="";}
                 }catch(LinkageError error){if(valid(token))lastError="PP-OCRv4 could not load — reinstall the app";}
                 catch(Exception error){if(valid(token))lastError="PP-OCRv4 read failed — pause and try again";}
                 finally{captureBitmap.recycle();busy.set(false);}

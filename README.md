@@ -2,7 +2,7 @@
 
 An offline Android wanted-book finder for op shops. Sweep the camera across a shelf; potential matches get a box in the live view. Built with PP-OCRv4 Mobile, NCNN, CameraX and OpenCV, with the Pixel 10 as the first testing target.
 
-**Version 0.4 — real-shelf accuracy and Pixel 10 performance still need device testing.** A box is a prompt to check a book yourself, not a confirmed identification.
+**Version 0.4.1 — real-shelf accuracy and Pixel 10 performance still need device testing.** A box is a prompt to check a book yourself, not a confirmed identification.
 
 ## Using the app
 
@@ -18,7 +18,7 @@ Wanted entries can be edited, disabled and deleted. **Import/Export** uses the A
 
 ## Upgrading from an earlier version
 
-**Export your wanted list before replacing the installed APK.** GitHub builds currently use per-run debug keys, so Android may require uninstalling the old app before installing the new one. Reimport your exported JSON afterwards. Version 0.4 keeps the same list format. Builds from the same Android Studio installation normally share its local debug key.
+**Export your wanted list before replacing the installed APK.** GitHub builds currently use per-run debug keys, so Android may require uninstalling the old app before installing the new one. Reimport your exported JSON afterwards. Version 0.4.1 keeps the same list format. Builds from the same Android Studio installation normally share its local debug key.
 
 ## Install and build
 
@@ -45,13 +45,20 @@ Windows: use `gradlew.bat`. The Gradle 8.13 wrapper is included; Android Gradle 
 
 [Android build](https://github.com/pointandyshoot/BookScanner/actions/workflows/android.yml) tests, lints and builds the app on pushes and pull requests. Open a successful run and download **BookScanner-debug** under Artifacts, unzip it, then install `app-arm64-v8a-debug.apk` on the phone. GitHub sign-in is needed to download workflow artifacts. Android may ask you to allow installation from the app opening the APK. Each clean CI runner uses a new debug signing key; uninstall an older differently signed build before installing (export your wanted list first), or build consistently with Android Studio on your own computer.
 
+## Version 0.4.1: diagnostics and delayed reads
+
+- The recognition time budget starts after detection and always gives at least four text regions a chance to be read. The previous budget could run out during detection itself.
+- A match can attach to the viewfinder after up to eight seconds if the visual motion history and current texture still support it.
+- **Options → Show scan diagnostics** displays the time spent on detection and OCR, the number of regions found/read, candidate hints, and how many hints the overlay accepted. Only counts and timing are displayed; no photos or recognised text are saved.
+- The About title reads the installed version from Android's package information.
+
 ## Version 0.4: immediate shelf hints
 
 - One orange highlight as soon as a useful clue is read. No multi-frame confirmation gate.
 - Exact distinctive words of four or more letters, five-letter fuzzy fragments and more permissive matching. Short titles still need exact whole words; common publishing words are excluded from fragment matching.
 - Nearby parallel lines can contribute combined text; their boxes stay anchored to actual lettering. This is geometric pairing, not guaranteed book segmentation.
 - Three detail passes per full-view pass, using a 3 × 3 grid of overlapping 45%-size crops. Tracked books get only occasional rereads so they do not monopolise discovery.
-- Lower detector and OCR confidence cut-offs. Very clear readings skip the reverse-direction inference. Work is checked against a 1.1-second soft budget between regions; individual inference can exceed this.
+- Lower detector and OCR confidence cut-offs. Very clear readings skip the reverse-direction inference. Recognition gets a 1.2-second soft budget after detection and visits at least four regions; individual inference can exceed this.
 - Existing independent optical-flow tracking and once-per-appearance haptics retained.
 - NCNN packed CPU layouts enabled; FP16 and GPU execution remain disabled.
 - PP-OCRv4 remains offline. Pixel 10 shelf recall and speed are unmeasured until a phone trial.

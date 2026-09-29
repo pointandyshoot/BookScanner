@@ -81,10 +81,18 @@ public class LiveTrackerTest {
     }
     @Test public void oldResultsAndSessionResetCannotResurrectBoxes(){
         Mat base=shelf();try(LiveTracker tracker=new LiveTracker()){
-            VisionFrames.Gray first=gray(base);tracker.frame(first,1,0);tracker.frame(first,2,4000);
+            VisionFrames.Gray first=gray(base);tracker.frame(first,1,0);tracker.frame(first,2,9000);
             tracker.detections(detection(),first,1,0);assertTrue(tracker.visible().isEmpty());
-            tracker.detections(detection(),first,2,4000);assertEquals(1,tracker.visible().size());
+            tracker.detections(detection(),first,2,9000);assertEquals(1,tracker.visible().size());
             tracker.clear();assertTrue(tracker.visible().isEmpty());
+        }finally{base.release();}
+    }
+    @Test public void fourSecondOldResultCanAttachToStationaryShelf(){
+        Mat base=shelf();try(LiveTracker tracker=new LiveTracker()){
+            VisionFrames.Gray first=gray(base);tracker.frame(first,1,0);
+            for(int i=2;i<=66;i++)tracker.frame(first,i,i*65);
+            assertEquals(1,tracker.detections(detection(),first,1,0));
+            assertEquals(1,tracker.visible().size());
         }finally{base.release();}
     }
 }

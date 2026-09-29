@@ -23,6 +23,16 @@ final class OcrReader implements AutoCloseable {
     private final List<String> keys=new ArrayList<>();
     private final Matcher matcher=new Matcher();
     private int step,detailStep,session=-1;
+    static final class Stats {
+        final int regions,visited,readable,matches;final long detectorMs,totalMs;final String scope;
+        Stats(int regions,int visited,int readable,int matches,long detectorMs,long totalMs,String scope){
+            this.regions=regions;this.visited=visited;this.readable=readable;this.matches=matches;
+            this.detectorMs=detectorMs;this.totalMs=totalMs;this.scope=scope;
+        }
+    }
+    private volatile Stats lastStats;
+    Stats stats(){return lastStats;}
+
     OcrReader(AssetManager assets){this.assets=assets;}
     private void initialise() throws IOException {
         if(handle!=0)return;
@@ -49,18 +59,28 @@ final class OcrReader implements AutoCloseable {
                 if(spineMode){List<Rect> bands=ImagePrep.spineBands(upright);if(!bands.isEmpty())region=bands.get((step/2)%bands.size());}
             }
         }
-        try(ReadingImage input=new ReadingImage(upright,region,0,1)){readRegions(input,books,valid,publish,step++);}
+        try(ReadingImage input=new ReadingImage(upright,region,0,1)){
+            readRegions(input,books,valid,publish,step++,region.width()==w&&region.height()==h?"full":"detail");
+        }
     }
     List<LiveTracker.Detection> readAtAngle(Bitmap source,Rect region,float angle,float scale,List<WantedBook> books) throws Exception {
-        initialise();try(ReadingImage input=new ReadingImage(source,region,angle,scale)){return readRegions(input,books,()->true,hits->{},0);}
+        initialise();try(ReadingImage input=new ReadingImage(source,region,angle,scale)){return readRegions(input,books,()->true,hits->{},0,"test");}
     }
     private List<LiveTracker.Detection> readRegions(ReadingImage input,List<WantedBook> books,BooleanSupplier valid,
-                                                   Consumer<List<LiveTracker.Detection>> publish,int offset){
+                                                   Consumer<List<LiveTracker.Detection>> publish,int offset,String scope){
         long started=SystemClock.elapsedRealtime();List<float[]> regions=detect(input.bitmap);
-        List<LiveTracker.Detection> hits=new ArrayList<>();List<TextClue> clues=new ArrayList<>();if(regions.isEmpty())return hits;
+        long detectorDone=SystemClock.elapsedRealtime();
+        List<LiveTracker.Detection> hits=new ArrayList<>();List<TextClue> clues=new ArrayList<>();
+        int visited=0,readable=0;
+        if(regions.isEmpty()){
+            lastStats=new Stats(0,0,0,0,detectorDone-started,detectorDone-started,scope);
+            return hits;
+        }
         int start=(offset*7)%regions.size();
         for(int i=0;i<Math.min(24,regions.size())&&valid.getAsBoolean();i++){
-            if(i>0&&SystemClock.elapsedRealtime()-started>1100)break;
+            // A slow detector must not consume the entire recognition budget.
+            if(i>=4&&SystemClock.elapsedRealtime()-detectorDone>1200)break;
+            visited++;
             float[] q=regions.get((start+i)%regions.size());Bitmap crop=rectify(input.bitmap,q);
             try{
                 Reading chosen=recognise(crop);
@@ -72,6 +92,7 @@ final class OcrReader implements AutoCloseable {
                     finally{if(flipped!=crop)flipped.recycle();}
                 }
                 if(chosen.confidence<.35||chosen.text.isBlank()||chosen.text.length()>500)continue;
+                readable++;
                 float[] mapped=q.clone();input.toSource.mapPoints(mapped);
                 List<Matcher.Match> matches=new ArrayList<>(matcher.find(chosen.text,books));
                 // Join only nearby, similarly oriented lines. Keep the box anchored to the actual text.
@@ -91,6 +112,8 @@ final class OcrReader implements AutoCloseable {
                 if(!hits.isEmpty()&&valid.getAsBoolean())publish.accept(List.copyOf(hits));
             }finally{crop.recycle();}
         }
+        lastStats=new Stats(regions.size(),visited,readable,hits.size(),
+                detectorDone-started,SystemClock.elapsedRealtime()-started,scope);
         if(valid.getAsBoolean())publish.accept(List.copyOf(hits));return hits;
     }
     private static final class TextClue {
