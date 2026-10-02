@@ -28,12 +28,17 @@ public class AngledOcrTest {
                 new WantedBook("lower-example-two","*","David Baldacci",List.of(),true));
         java.util.Set<String> found=new java.util.HashSet<>();
         try(OcrReader reader=new OcrReader(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().getTargetContext().getAssets())){
-            for(int job=0;job<4;job++)reader.read(scene,wanted,1,false,null,()->true,hits->{
-                for(LiveTracker.Detection hit:hits){
-                    found.add(hit.id);float[] box=LiveTracker.bounds(hit.quad);
-                    assertTrue("Hint must map to its original shelf",hit.id.equals("upper-example")?box[3]<960:box[1]>960);
-                }
-            });
+            for(int job=0;job<4;job++){
+                reader.read(scene,wanted,1,false,null,()->true,hits->{
+                    for(LiveTracker.Detection hit:hits){
+                        found.add(hit.id);float[] box=LiveTracker.bounds(hit.quad);
+                        assertTrue("Hint must map to its original shelf",hit.id.equals("upper-example")?box[3]<960:box[1]>960);
+                    }
+                });
+                OcrReader.Stats stats=reader.stats();
+                assertTrue("Default discovery must use the smaller detector",Math.max(stats.detectorWidth,stats.detectorHeight)<=768);
+                assertTrue(stats.runtime.equals("CPU FP16")||stats.runtime.equals("CPU FP32"));
+            }
             for(WantedBook book:wanted)assertTrue("Missing author "+book.author,found.contains(book.id));
         }finally{scene.recycle();}
     }

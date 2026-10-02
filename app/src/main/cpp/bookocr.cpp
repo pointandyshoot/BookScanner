@@ -2,19 +2,28 @@
 #include <android/asset_manager_jni.h>
 #include <android/bitmap.h>
 #include <net.h>
+#include <cpu.h>
 #include <algorithm>
 #include <cmath>
 #include <memory>
 #include <vector>
 namespace {
+bool supportsFp16() {
+#if NCNN_ARM82
+    return ncnn::cpu_support_arm_asimdhp()!=0;
+#else
+    return false;
+#endif
+}
 struct Engine {
     ncnn::Net det, rec;
+    const bool fp16=supportsFp16();
     Engine() {
         for (auto* net : {&det, &rec}) {
             net->opt.num_threads=2;
             net->opt.use_vulkan_compute=false;
-            net->opt.use_fp16_arithmetic=false;
-            net->opt.use_fp16_storage=false;
+            net->opt.use_fp16_arithmetic=fp16;
+            net->opt.use_fp16_storage=fp16;
             net->opt.use_packing_layout=true;
         }
     }
@@ -38,6 +47,10 @@ jfloatArray array(JNIEnv* env,const std::vector<float>& values) {
     if(result)env->SetFloatArrayRegion(result,0,static_cast<jsize>(values.size()),values.data());
     return result;
 }
+}
+extern "C" JNIEXPORT jboolean JNICALL
+Java_au_id_pointandyshoot_bookscanner_PpOcrNative_fp16Enabled(JNIEnv*,jclass,jlong handle) {
+    return handle && reinterpret_cast<Engine*>(handle)->fp16 ? JNI_TRUE : JNI_FALSE;
 }
 extern "C" JNIEXPORT jlong JNICALL
 Java_au_id_pointandyshoot_bookscanner_PpOcrNative_open(JNIEnv* env,jclass,jobject assets) {

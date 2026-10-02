@@ -2,7 +2,7 @@
 
 An offline Android wanted-book finder for op shops. Sweep the camera across a shelf; potential matches get a box in the live view. Built with PP-OCRv4 Mobile, NCNN, CameraX and OpenCV, with the Pixel 10 as the first testing target.
 
-**Version 0.4.2 — real-shelf accuracy and Pixel 10 performance still need device testing.** A box is a prompt to check a book yourself, not a confirmed identification.
+**Version 0.4.3 — real-shelf accuracy and Pixel 10 performance still need device testing.** A box is a prompt to check a book yourself, not a confirmed identification.
 
 ## Using the app
 
@@ -18,7 +18,7 @@ Wanted entries can be edited, disabled and deleted. **Import/Export** uses the A
 
 ## Upgrading from an earlier version
 
-**Export your wanted list before replacing the installed APK.** GitHub builds currently use per-run debug keys, so Android may require uninstalling the old app before installing the new one. Reimport your exported JSON afterwards. Version 0.4.2 keeps the same list format. Builds from the same Android Studio installation normally share its local debug key.
+**Export your wanted list before replacing the installed APK.** GitHub builds currently use per-run debug keys, so Android may require uninstalling the old app before installing the new one. Reimport your exported JSON afterwards. Version 0.4.3 keeps the same list format. Builds from the same Android Studio installation normally share its local debug key.
 
 ## Install and build
 
@@ -45,6 +45,14 @@ Windows: use `gradlew.bat`. The Gradle 8.13 wrapper is included; Android Gradle 
 
 [Android build](https://github.com/pointandyshoot/BookScanner/actions/workflows/android.yml) tests, lints and builds the app on pushes and pull requests. Open a successful run and download **BookScanner-debug** under Artifacts, unzip it, then install `app-arm64-v8a-debug.apk` on the phone. GitHub sign-in is needed to download workflow artifacts. Android may ask you to allow installation from the app opening the APK. Each clean CI runner uses a new debug signing key; uninstall an older differently signed build before installing (export your wanted list first), or build consistently with Android Studio on your own computer.
 
+## Version 0.4.3: reduce OCR latency
+
+- Default discovery uses a 768-pixel detector instead of 1280, retaining the original image for recognition crops. Two passes per sixteen use a 960-pixel detector, alternating lower and upper detail coverage.
+- Fast passes rotate through the sixteen largest text regions, visiting at most twelve with a 0.4-second soft recognition budget after at least two regions. Detail passes retain the wider region pool, four-region minimum and 0.8-second soft budget. Individual inference is not interruptible.
+- Enable NCNN half-precision CPU storage/arithmetic only when both the compiled ARM kernels and runtime CPU support it. Other hardware uses float32. This restores NCNN's supported CPU optimisation rather than enabling GPU or Tensor acceleration.
+- Diagnostics show detector dimensions and precision mode, plus separate accepted-result and active-box counts. Counts from the latest OCR pass can be zero while an earlier box remains tracked.
+- Private host tests found 768-pixel detection about 2–2.5 times faster on sampled frames while retaining readable target clues. Whole-video replay tested recognition and motion handoff; Pixel speed and ARM half-precision accuracy still need device verification.
+
 ## Version 0.4.2: faster shelf coverage
 
 - Rotate discovery images by 90° before detection so vertical spine names can form complete text lines. Full-view passes alternate 90° and upright orientation.
@@ -68,7 +76,7 @@ Windows: use `gradlew.bat`. The Gradle 8.13 wrapper is included; Android Gradle 
 - Three detail passes per full-view pass, using a 3 × 3 grid of overlapping 45%-size crops. Tracked books get only occasional rereads so they do not monopolise discovery.
 - Lower detector and OCR confidence cut-offs. Very clear readings skip the reverse-direction inference. Recognition gets a 1.2-second soft budget after detection and visits at least four regions; individual inference can exceed this.
 - Existing independent optical-flow tracking and once-per-appearance haptics retained.
-- NCNN packed CPU layouts enabled; FP16 and GPU execution remain disabled.
+- NCNN packed CPU layouts enabled; GPU execution remains disabled; v0.4.3 enables supported ARM CPU FP16.
 - PP-OCRv4 remains offline. Pixel 10 shelf recall and speed are unmeasured until a phone trial.
 
 ## Privacy and storage

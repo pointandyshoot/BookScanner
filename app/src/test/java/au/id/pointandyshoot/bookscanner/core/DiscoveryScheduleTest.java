@@ -25,4 +25,12 @@ public class DiscoveryScheduleTest {
         DiscoverySchedule schedule=new DiscoverySchedule();for(int i=0;i<7;i++)schedule.next();schedule.reset();
         assertEquals("full 90°",schedule.next().scope);
     }
+    @Test public void largerDetectorPassesReachBothShelvesWithoutSlowingEveryJob(){
+        DiscoverySchedule schedule=new DiscoverySchedule();int detail=0;boolean upper=false,lower=false;
+        for(int i=0;i<16;i++){
+            DiscoverySchedule.Plan plan=schedule.next();
+            if(plan.detail){detail++;assertFalse(plan.full);upper|=plan.top==0;lower|=plan.bottom==1;}
+        }
+        assertEquals(2,detail);assertTrue(upper);assertTrue(lower);
+    }
 }

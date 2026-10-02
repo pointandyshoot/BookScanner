@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 final class PpOcrNative {
     static { System.loadLibrary("bookocr"); }
     static native long open(AssetManager assets);
+    static native boolean fp16Enabled(long handle);
     static native float[] detect(long handle,Bitmap bitmap,int width,int height);
     static native float[] recognise(long handle,Bitmap crop);
     static native void close(long handle);

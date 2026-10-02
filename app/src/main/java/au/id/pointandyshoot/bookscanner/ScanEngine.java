@@ -76,9 +76,9 @@ final class ScanEngine implements ImageAnalysis.Analyzer {
                     thermal>=3?"Phone warm — detail reads slowed":"PP-OCRv4 • sweep slowly • tap to focus";
             if(diagnostics){
                 OcrReader.Stats data=ocrStats;
-                message+="\n"+(data==null?"OCR starting":data.scope+" "+data.totalMs+" ms (detect "+data.detectorMs+") · "+
+                message+="\n"+(data==null?"OCR starting":"Last "+data.scope+" "+data.totalMs+" ms (detect "+data.detectorMs+" at "+data.detectorWidth+"×"+data.detectorHeight+") · "+data.runtime+" · "+
                         data.regions+" regions / "+data.visited+" tried / "+data.readable+" read / "+data.matches+" hints")+
-                        " · overlay "+lastApplied+"/"+lastMatches;
+                        " · accepted "+lastApplied+"/"+lastMatches+" · active "+hits.size();
             }
             if(enabled&&token==generation.get())listener.result(hits,gray.sourceWidth,gray.sourceHeight,now,message,token,alert);
             if(now-lastOcr<(thermal>=3?1100:250)||!busy.compareAndSet(false,true))return;

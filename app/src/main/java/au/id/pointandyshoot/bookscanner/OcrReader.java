@@ -20,15 +20,18 @@ import java.util.function.*;
 final class OcrReader implements AutoCloseable {
     private final AssetManager assets;
     private long handle;
+    private String runtime="CPU FP32";
     private final List<String> keys=new ArrayList<>();
     private final Matcher matcher=new Matcher();
     private final DiscoverySchedule discovery=new DiscoverySchedule();
     private int step,session=-1;
     static final class Stats {
         final int regions,visited,readable,matches;final long detectorMs,totalMs;final String scope;
-        Stats(int regions,int visited,int readable,int matches,long detectorMs,long totalMs,String scope){
+        final int detectorWidth,detectorHeight;final String runtime;
+        Stats(int regions,int visited,int readable,int matches,long detectorMs,long totalMs,String scope,int dw,int dh,String runtime){
             this.regions=regions;this.visited=visited;this.readable=readable;this.matches=matches;
             this.detectorMs=detectorMs;this.totalMs=totalMs;this.scope=scope;
+            this.detectorWidth=dw;this.detectorHeight=dh;this.runtime=runtime;
         }
     }
     private volatile Stats lastStats;
@@ -44,6 +47,7 @@ final class OcrReader implements AutoCloseable {
         keys.add(" ");
         if(keys.size()!=6625)throw new IOException("PP-OCRv4 dictionary mismatch");
         handle=PpOcrNative.open(assets);
+        runtime=PpOcrNative.fp16Enabled(handle)?"CPU FP16":"CPU FP32";
     }
     void read(Bitmap upright,List<WantedBook> books,int token,boolean spineMode,float[] recheck,
               BooleanSupplier valid,Consumer<List<LiveTracker.Detection>> publish) throws Exception {
@@ -62,29 +66,32 @@ final class OcrReader implements AutoCloseable {
             }
         }
         try(ReadingImage input=new ReadingImage(upright,region,plan.angle,1)){
-            readRegions(input,books,valid,publish,step++,scope);
+            readRegions(input,books,valid,publish,step++,(plan.detail?"detail ":"fast ")+scope,plan.detail);
         }
     }
     List<LiveTracker.Detection> readAtAngle(Bitmap source,Rect region,float angle,float scale,List<WantedBook> books) throws Exception {
-        initialise();try(ReadingImage input=new ReadingImage(source,region,angle,scale)){return readRegions(input,books,()->true,hits->{},0,"test");}
+        initialise();try(ReadingImage input=new ReadingImage(source,region,angle,scale)){return readRegions(input,books,()->true,hits->{},0,"test fast",false);}
     }
     private List<LiveTracker.Detection> readRegions(ReadingImage input,List<WantedBook> books,BooleanSupplier valid,
-                                                   Consumer<List<LiveTracker.Detection>> publish,int offset,String scope){
-        long started=SystemClock.elapsedRealtime();List<float[]> regions=detect(input.bitmap);
+                                                   Consumer<List<LiveTracker.Detection>> publish,int offset,String scope,boolean detail){
+        int edge=detail?960:768;float scale=Math.min(1,(float)edge/Math.max(input.bitmap.getWidth(),input.bitmap.getHeight()));
+        int dw=Math.max(32,Math.round(input.bitmap.getWidth()*scale/32)*32),dh=Math.max(32,Math.round(input.bitmap.getHeight()*scale/32)*32);
+        long started=SystemClock.elapsedRealtime();List<float[]> regions=detect(input.bitmap,dw,dh);
         long detectorDone=SystemClock.elapsedRealtime();
         List<LiveTracker.Detection> hits=new ArrayList<>();List<TextClue> clues=new ArrayList<>();
         int visited=0,readable=0;
         if(regions.isEmpty()){
-            lastStats=new Stats(0,0,0,0,detectorDone-started,detectorDone-started,scope);
+            lastStats=new Stats(0,0,0,0,detectorDone-started,detectorDone-started,scope,dw,dh,runtime);
             if(valid.getAsBoolean())publish.accept(List.of());
             return hits;
         }
-        int start=(offset*7)%regions.size();
-        for(int i=0;i<Math.min(24,regions.size())&&valid.getAsBoolean();i++){
+        // Fast passes rotate through large legible lines, not tiny publisher glyphs.
+        int pool=detail?regions.size():Math.min(16,regions.size()),start=(offset*5)%pool;
+        for(int i=0;i<Math.min(detail?24:12,pool)&&valid.getAsBoolean();i++){
             // A slow detector must not consume the entire recognition budget.
-            if(i>=4&&SystemClock.elapsedRealtime()-detectorDone>800)break;
+            if(i>=(detail?4:2)&&SystemClock.elapsedRealtime()-detectorDone>(detail?800:400))break;
             visited++;
-            float[] q=regions.get((start+i)%regions.size());Bitmap crop=rectify(input.bitmap,q);
+            float[] q=regions.get((start+i)%pool);Bitmap crop=rectify(input.bitmap,q);
             try{
                 Reading chosen=recognise(crop);
                 // A very clear reading needs no second inference. Otherwise try the other direction.
@@ -116,7 +123,7 @@ final class OcrReader implements AutoCloseable {
             }finally{crop.recycle();}
         }
         lastStats=new Stats(regions.size(),visited,readable,hits.size(),
-                detectorDone-started,SystemClock.elapsedRealtime()-started,scope);
+                detectorDone-started,SystemClock.elapsedRealtime()-started,scope,dw,dh,runtime);
         if(valid.getAsBoolean())publish.accept(List.copyOf(hits));return hits;
     }
     private static final class TextClue {
@@ -129,9 +136,7 @@ final class OcrReader implements AutoCloseable {
             if(at<0)into.add(m);else if(m.score>into.get(at).score)into.set(at,m);
         }
     }
-    private List<float[]> detect(Bitmap bitmap){
-        float scale=Math.min(1,1280f/Math.max(bitmap.getWidth(),bitmap.getHeight()));
-        int w=Math.max(32,Math.round(bitmap.getWidth()*scale/32)*32),h=Math.max(32,Math.round(bitmap.getHeight()*scale/32)*32);
+    private List<float[]> detect(Bitmap bitmap,int w,int h){
         float[] output=PpOcrNative.detect(handle,bitmap,w,h);int mw=(int)output[0],mh=(int)output[1];
         Mat probability=new Mat(mh,mw,CvType.CV_32FC1),binary=new Mat(),hierarchy=new Mat(),empty=new Mat();
         List<MatOfPoint> contours=new ArrayList<>();List<float[]> result=new ArrayList<>();
