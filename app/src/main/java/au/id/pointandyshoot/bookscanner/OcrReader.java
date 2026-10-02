@@ -22,7 +22,8 @@ final class OcrReader implements AutoCloseable {
     private long handle;
     private final List<String> keys=new ArrayList<>();
     private final Matcher matcher=new Matcher();
-    private int step,detailStep,session=-1;
+    private final DiscoverySchedule discovery=new DiscoverySchedule();
+    private int step,session=-1;
     static final class Stats {
         final int regions,visited,readable,matches;final long detectorMs,totalMs;final String scope;
         Stats(int regions,int visited,int readable,int matches,long detectorMs,long totalMs,String scope){
@@ -46,21 +47,22 @@ final class OcrReader implements AutoCloseable {
     }
     void read(Bitmap upright,List<WantedBook> books,int token,boolean spineMode,float[] recheck,
               BooleanSupplier valid,Consumer<List<LiveTracker.Detection>> publish) throws Exception {
-        if(session!=token){step=0;detailStep=0;session=token;}
-        initialise();int w=upright.getWidth(),h=upright.getHeight();Rect region=new Rect(0,0,w,h);
+        if(session!=token){step=0;discovery.reset();session=token;}
+        initialise();int w=upright.getWidth(),h=upright.getHeight();DiscoverySchedule.Plan plan=discovery.next();
+        Rect region=new Rect(0,Math.round(h*plan.top),w,Math.round(h*plan.bottom));String scope=plan.scope;
         // Prioritise discovery at native detail; existing hints get only occasional rereads.
-        if(step%4!=0){
+        if(!plan.full){
             if(recheck!=null&&step%12==11){
                 int pad=Math.max(48,Math.round(Math.max(recheck[2]-recheck[0],recheck[3]-recheck[1])*.25f));
                 region=new Rect(Math.max(0,(int)recheck[0]-pad),Math.max(0,(int)recheck[1]-pad),Math.min(w,(int)recheck[2]+pad),Math.min(h,(int)recheck[3]+pad));
-            }else{
-                int cw=Math.round(w*.45f),ch=Math.round(h*.45f),tile=detailStep++%9;
-                int left=(tile%3)*(w-cw)/2,top=(tile/3)*(h-ch)/2;region=new Rect(left,top,left+cw,top+ch);
-                if(spineMode){List<Rect> bands=ImagePrep.spineBands(upright);if(!bands.isEmpty())region=bands.get((step/2)%bands.size());}
+                scope="recheck 90°";
+            }else if(spineMode&&step%12==10){
+                List<Rect> bands=ImagePrep.spineBands(upright);
+                if(!bands.isEmpty()){region=bands.get((step/12)%bands.size());scope="spine 90°";}
             }
         }
-        try(ReadingImage input=new ReadingImage(upright,region,0,1)){
-            readRegions(input,books,valid,publish,step++,region.width()==w&&region.height()==h?"full":"detail");
+        try(ReadingImage input=new ReadingImage(upright,region,plan.angle,1)){
+            readRegions(input,books,valid,publish,step++,scope);
         }
     }
     List<LiveTracker.Detection> readAtAngle(Bitmap source,Rect region,float angle,float scale,List<WantedBook> books) throws Exception {
@@ -74,12 +76,13 @@ final class OcrReader implements AutoCloseable {
         int visited=0,readable=0;
         if(regions.isEmpty()){
             lastStats=new Stats(0,0,0,0,detectorDone-started,detectorDone-started,scope);
+            if(valid.getAsBoolean())publish.accept(List.of());
             return hits;
         }
         int start=(offset*7)%regions.size();
         for(int i=0;i<Math.min(24,regions.size())&&valid.getAsBoolean();i++){
             // A slow detector must not consume the entire recognition budget.
-            if(i>=4&&SystemClock.elapsedRealtime()-detectorDone>1200)break;
+            if(i>=4&&SystemClock.elapsedRealtime()-detectorDone>800)break;
             visited++;
             float[] q=regions.get((start+i)%regions.size());Bitmap crop=rectify(input.bitmap,q);
             try{

@@ -1,4 +1,4 @@
-# Architecture (0.4.1)
+# Architecture (0.4.2)
 
 ## Discovery and recognition
 
@@ -6,9 +6,9 @@ CameraX supplies a requested 2560 × 1920 analysis frame with a supported-size f
 
 The PP-OCRv4 Mobile detector and recogniser run offline using pinned NCNN source and verified bundled weights. NCNN uses two CPU threads and packed SIMD layouts; FP16 and Vulkan remain disabled. Detector input is capped at 1280 pixels on its long edge. Its probability-map threshold is 0.20 and contour confidence cut-off is 0.40. Rotated rectangles are expanded and rectified from the source into 48-pixel-high recognition strips. This handles rotation, not all perspective distortion or curved spines.
 
-Three detail passes alternate with one full-view pass. Detail discovery cycles through nine overlapping 45%-size tiles. A tracked region may receive a reread once per twelve jobs, if its last reading is at least four seconds old. Existing hints therefore do not monopolise the detail lane.
+Discovery cycles through a full view, two lower shelf bands, then one upper shelf band. Bands span the full image width and 60% of its height, overlapping by 20%. Detail inputs rotate by 90° before detection: rectifying a region after detection alone cannot repair a name split or missed by the detector. Full-view jobs alternate 90° and upright orientation to retain horizontal-text coverage. A tracked region may receive a reread once per twelve jobs if its last reading is at least four seconds old. Experimental spine proposals receive only one slot per twelve jobs, preserving ordinary coverage when enabled.
 
-Each job visits up to 24 regions, rotating the start index. After detection finishes, a 1.2-second soft recognition budget is checked after the first four regions; individual inference cannot be interrupted. Recognition tries the opposite reading direction unless the first reading has confidence at least 0.93. Direction is chosen by OCR confidence independently of wanted text. Nonblank readings with confidence at least 0.35 enter matching.
+Each job visits up to 24 regions, rotating the start index. After detection finishes, a 0.8-second soft recognition budget is checked after the first four regions; individual inference cannot be interrupted. Recognition tries the opposite reading direction unless the first reading has confidence at least 0.93. Direction is chosen by OCR confidence independently of wanted text. Nonblank readings with confidence at least 0.35 enter matching.
 
 Late OCR results can use up to eight seconds of bounded motion history. A current texture comparison rejects moved or vanished regions. Mild camera noise or exposure shifts can still be treated as stationary when motion fitting fails. Optional scan diagnostics expose the detected/visited/read/matched counts and overlay acceptance, without storing the camera image or OCR text.
 

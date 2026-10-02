@@ -11,6 +11,32 @@ import static org.junit.Assert.*;
 @RunWith(AndroidJUnit4.class)
 public class AngledOcrTest {
     @BeforeClass public static void nativeRuntime(){assertTrue(NativeVision.initialise());}
+    @Test public void discoveryReadsVerticalNamesOnBothShelvesAndMapsHintsBack() throws Exception {
+        Bitmap scene=Bitmap.createBitmap(1080,1920,Bitmap.Config.ARGB_8888);
+        Canvas canvas=new Canvas(scene);canvas.drawColor(Color.rgb(35,35,35));
+        Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);paint.setColor(Color.WHITE);
+        paint.setTypeface(Typeface.create("sans-serif",Typeface.BOLD));paint.setTextSize(34);
+        String[] names={"ROBERT LUDLUM","TERRY PRATCHETT","CHARLAINE HARRIS",
+                "WILBUR SMITH","JODI PICOULT","DAVID BALDACCI"};
+        for(int i=0;i<names.length;i++){
+            canvas.save();canvas.translate(180+(i%3)*300,i<3?140:1050);canvas.rotate(90);
+            canvas.drawText(names[i],0,0,paint);canvas.restore();
+        }
+        List<WantedBook> wanted=List.of(
+                new WantedBook("upper-example","*","Terry Pratchett",List.of(),true),
+                new WantedBook("lower-example-one","*","Jodi Picoult",List.of(),true),
+                new WantedBook("lower-example-two","*","David Baldacci",List.of(),true));
+        java.util.Set<String> found=new java.util.HashSet<>();
+        try(OcrReader reader=new OcrReader(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().getTargetContext().getAssets())){
+            for(int job=0;job<4;job++)reader.read(scene,wanted,1,false,null,()->true,hits->{
+                for(LiveTracker.Detection hit:hits){
+                    found.add(hit.id);float[] box=LiveTracker.bounds(hit.quad);
+                    assertTrue("Hint must map to its original shelf",hit.id.equals("upper-example")?box[3]<960:box[1]>960);
+                }
+            });
+            for(WantedBook book:wanted)assertTrue("Missing author "+book.author,found.contains(book.id));
+        }finally{scene.recycle();}
+    }
     @Test public void arbitraryRotationAndCropMapBackToSource(){
         Bitmap b=Bitmap.createBitmap(900,700,Bitmap.Config.ARGB_8888);
         try(ReadingImage reading=new ReadingImage(b,new Rect(100,150,700,450),37,1.5f)){

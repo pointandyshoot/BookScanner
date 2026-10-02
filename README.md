@@ -2,7 +2,7 @@
 
 An offline Android wanted-book finder for op shops. Sweep the camera across a shelf; potential matches get a box in the live view. Built with PP-OCRv4 Mobile, NCNN, CameraX and OpenCV, with the Pixel 10 as the first testing target.
 
-**Version 0.4.1 — real-shelf accuracy and Pixel 10 performance still need device testing.** A box is a prompt to check a book yourself, not a confirmed identification.
+**Version 0.4.2 — real-shelf accuracy and Pixel 10 performance still need device testing.** A box is a prompt to check a book yourself, not a confirmed identification.
 
 ## Using the app
 
@@ -18,7 +18,7 @@ Wanted entries can be edited, disabled and deleted. **Import/Export** uses the A
 
 ## Upgrading from an earlier version
 
-**Export your wanted list before replacing the installed APK.** GitHub builds currently use per-run debug keys, so Android may require uninstalling the old app before installing the new one. Reimport your exported JSON afterwards. Version 0.4.1 keeps the same list format. Builds from the same Android Studio installation normally share its local debug key.
+**Export your wanted list before replacing the installed APK.** GitHub builds currently use per-run debug keys, so Android may require uninstalling the old app before installing the new one. Reimport your exported JSON afterwards. Version 0.4.2 keeps the same list format. Builds from the same Android Studio installation normally share its local debug key.
 
 ## Install and build
 
@@ -44,6 +44,14 @@ Windows: use `gradlew.bat`. The Gradle 8.13 wrapper is included; Android Gradle 
 ### GitHub APK
 
 [Android build](https://github.com/pointandyshoot/BookScanner/actions/workflows/android.yml) tests, lints and builds the app on pushes and pull requests. Open a successful run and download **BookScanner-debug** under Artifacts, unzip it, then install `app-arm64-v8a-debug.apk` on the phone. GitHub sign-in is needed to download workflow artifacts. Android may ask you to allow installation from the app opening the APK. Each clean CI runner uses a new debug signing key; uninstall an older differently signed build before installing (export your wanted list first), or build consistently with Android Studio on your own computer.
+
+## Version 0.4.2: faster shelf coverage
+
+- Rotate discovery images by 90° before detection so vertical spine names can form complete text lines. Full-view passes alternate 90° and upright orientation.
+- Replace the nine small tiles with shelf-wide overlapping bands: full view, lower band, lower band, upper band. This gives arriving lower-shelf books a second detail read without waiting for an entire grid cycle.
+- Reduce the soft recognition budget to 0.8 seconds after detection, retaining the four-region minimum and immediate partial-result publishing. Individual inference can still exceed the budget.
+- Experimental spine crops receive one optional slot per twelve jobs instead of replacing every ordinary detail pass.
+- A private host video replay reproduced missing hints with the previous schedule. Rotated images recognised clear author fragments and the revised schedule produced hints that passed motion/texture checks. This is not a measured Pixel 10 benchmark or an Android camera integration test.
 
 ## Version 0.4.1: diagnostics and delayed reads
 
