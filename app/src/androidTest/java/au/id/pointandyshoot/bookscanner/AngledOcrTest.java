@@ -11,6 +11,37 @@ import static org.junit.Assert.*;
 @RunWith(AndroidJUnit4.class)
 public class AngledOcrTest {
     @BeforeClass public static void nativeRuntime(){assertTrue(NativeVision.initialise());}
+    @Test public void discoveryReadsVerticalNamesOnBothShelvesAndMapsHintsBack() throws Exception {
+        Bitmap scene=Bitmap.createBitmap(1080,1920,Bitmap.Config.ARGB_8888);
+        Canvas canvas=new Canvas(scene);canvas.drawColor(Color.rgb(35,35,35));
+        Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);paint.setColor(Color.WHITE);
+        paint.setTypeface(Typeface.create("sans-serif",Typeface.BOLD));paint.setTextSize(34);
+        String[] names={"ROBERT LUDLUM","TERRY PRATCHETT","CHARLAINE HARRIS",
+                "WILBUR SMITH","JODI PICOULT","DAVID BALDACCI"};
+        for(int i=0;i<names.length;i++){
+            canvas.save();canvas.translate(180+(i%3)*300,i<3?140:1050);canvas.rotate(90);
+            canvas.drawText(names[i],0,0,paint);canvas.restore();
+        }
+        List<WantedBook> wanted=List.of(
+                new WantedBook("upper-example","*","Terry Pratchett",List.of(),true),
+                new WantedBook("lower-example-one","*","Jodi Picoult",List.of(),true),
+                new WantedBook("lower-example-two","*","David Baldacci",List.of(),true));
+        java.util.Set<String> found=new java.util.HashSet<>();
+        try(OcrReader reader=new OcrReader(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().getTargetContext().getAssets())){
+            for(int job=0;job<4;job++){
+                reader.read(scene,wanted,1,false,null,()->true,hits->{
+                    for(LiveTracker.Detection hit:hits){
+                        found.add(hit.id);float[] box=LiveTracker.bounds(hit.quad);
+                        assertTrue("Hint must map to its original shelf",hit.id.equals("upper-example")?box[3]<960:box[1]>960);
+                    }
+                });
+                OcrReader.Stats stats=reader.stats();
+                assertTrue("Default discovery must use the smaller detector",Math.max(stats.detectorWidth,stats.detectorHeight)<=768);
+                assertTrue(stats.runtime.equals("CPU FP16")||stats.runtime.equals("CPU FP32"));
+            }
+            for(WantedBook book:wanted)assertTrue("Missing author "+book.author,found.contains(book.id));
+        }finally{scene.recycle();}
+    }
     @Test public void arbitraryRotationAndCropMapBackToSource(){
         Bitmap b=Bitmap.createBitmap(900,700,Bitmap.Config.ARGB_8888);
         try(ReadingImage reading=new ReadingImage(b,new Rect(100,150,700,450),37,1.5f)){
@@ -25,15 +56,49 @@ public class AngledOcrTest {
         paint.setColor(Color.BLACK);paint.setTypeface(Typeface.create("sans-serif",Typeface.BOLD));paint.setTextSize(42);
         canvas.drawText("TERRY PRATCHETT",550,700,paint);
         WantedBook wanted=new WantedBook("public-example","*","Terry Pratchett",List.of(),true);
-        try(OcrReader reader=new OcrReader()){
+        try(OcrReader reader=new OcrReader(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().getTargetContext().getAssets())){
             for(float tilt:new float[]{-27,33,73}){
                 try(ReadingImage scene=new ReadingImage(base,new Rect(0,0,1920,1440),tilt,1)){
-                    List<LiveTracker.Detection> hits=reader.readAtAngle(scene.bitmap,new Rect(0,0,scene.bitmap.getWidth(),scene.bitmap.getHeight()),-tilt,1,List.of(wanted));
+                    List<LiveTracker.Detection> hits=reader.readAtAngle(scene.bitmap,new Rect(0,0,scene.bitmap.getWidth(),scene.bitmap.getHeight()),0,1,List.of(wanted));
                     assertFalse("No author at tilt "+tilt,hits.isEmpty());
                     float[] bounds=LiveTracker.bounds(hits.get(0).quad);
                     assertTrue(bounds[0]>=0&&bounds[2]<=scene.bitmap.getWidth()+2);
                 }
             }
         }finally{base.recycle();}
+    }
+    @Test public void splitAuthorSurnameCanHighlightWithoutFullName() throws Exception {
+        Bitmap scene=Bitmap.createBitmap(1200,900,Bitmap.Config.ARGB_8888);
+        Canvas canvas=new Canvas(scene);canvas.drawColor(Color.rgb(45,38,38));
+        Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);paint.setColor(Color.rgb(215,195,160));
+        paint.setTypeface(Typeface.create("sans-serif",Typeface.BOLD));
+        paint.setTextSize(19);canvas.drawText("STEPHENIE",400,380,paint);
+        paint.setTextSize(30);canvas.drawText("MEYER",400,418,paint);
+        WantedBook wanted=new WantedBook("split-example","*","Stephenie Meyer",List.of(),true);
+        try(OcrReader reader=new OcrReader(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().getTargetContext().getAssets())){
+            List<LiveTracker.Detection> hits=reader.readAtAngle(scene,new Rect(0,0,1200,900),0,1,List.of(wanted));
+            assertFalse("A split author name should produce an immediate hint",hits.isEmpty());
+        }finally{scene.recycle();}
+    }
+    @Test public void recognisedAuthorReachesOverlayAfterSlowOcr() throws Exception {
+        Bitmap scene=Bitmap.createBitmap(1920,1440,Bitmap.Config.ARGB_8888);
+        Canvas canvas=new Canvas(scene);canvas.drawColor(Color.WHITE);
+        Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG);paint.setColor(Color.BLACK);
+        paint.setTypeface(Typeface.create("sans-serif",Typeface.BOLD));paint.setTextSize(42);
+        canvas.drawText("TERRY PRATCHETT",550,700,paint);
+        WantedBook wanted=new WantedBook("handoff-example","*","Terry Pratchett",List.of(),true);
+        try(OcrReader reader=new OcrReader(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().getTargetContext().getAssets());
+            LiveTracker tracker=new LiveTracker()){
+            List<LiveTracker.Detection> hits=reader.readAtAngle(scene,new Rect(0,0,1920,1440),0,1,List.of(wanted));
+            assertFalse("OCR should recognise the author",hits.isEmpty());
+            Bitmap small=Bitmap.createScaledBitmap(scene,640,480,true);
+            int[] pixels=new int[640*480];small.getPixels(pixels,0,640,0,0,640,480);small.recycle();
+            byte[] luma=new byte[pixels.length];for(int i=0;i<pixels.length;i++)luma[i]=(byte)Color.red(pixels[i]);
+            VisionFrames.Gray frame=new VisionFrames.Gray(luma,640,480,1920,1440);
+            tracker.frame(frame,1,0);
+            for(int i=2;i<=66;i++)tracker.frame(frame,i,i*65);
+            assertTrue("OCR result should reach a visible track",tracker.detections(hits,frame,1,0)>0);
+            assertFalse(tracker.visible().isEmpty());
+        }finally{scene.recycle();}
     }
 }

@@ -29,15 +29,15 @@ final class MatchOverlay extends View {
         for(ScanEngine.Hit hit:hits){
             RectF r=new RectF(dx+hit.box.left*scale,dy+hit.box.top*scale,dx+hit.box.right*scale,dy+hit.box.bottom*scale);
             r.inset(-4*density,-4*density);
-            paint.setColor(hit.repeated?Color.rgb(145,215,172):Color.rgb(255,201,97));
-            paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth((hit.repeated?3:2)*density);
+            paint.setColor(Color.rgb(255,160,48));
+            paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(3*density);
             paint.setAlpha(hit.tracking?255:140);
             Path outline=new Path();
             outline.moveTo(dx+hit.quad[0]*scale,dy+hit.quad[1]*scale);
             for(int i=2;i<8;i+=2)outline.lineTo(dx+hit.quad[i]*scale,dy+hit.quad[i+1]*scale);
             outline.close();canvas.drawPath(outline,paint);paint.setAlpha(255);
             paint.setTextSize(13*density);paint.setStyle(Paint.Style.FILL);
-            String label=hit.label+(hit.reason.startsWith("Author only")?" · check title":"");
+            String label=hit.label+(hit.reason.contains("check title")?" · check title":" · possible");
             while(label.length()>3 && paint.measureText(label)>getWidth()-24*density) label=label.substring(0,label.length()-2)+"…";
             float x=Math.max(8*density,Math.min(r.left,getWidth()-paint.measureText(label)-12*density));
             float y=Math.max(22*density,r.top-7*density);

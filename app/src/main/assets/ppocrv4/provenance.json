@@ -1,0 +1,13 @@
+{
+  "engine": "PP-OCRv4 Mobile, NCNN CPU",
+  "models_source": "https://github.com/FeiGeChuanShu/ncnn_ppstructure/tree/dbe10814b5cb6bbefd5f1460489db15f2489b8ee/models/ppocrv4",
+  "dictionary_source": "https://github.com/PaddlePaddle/PaddleOCR/blob/v2.7.0/ppocr/utils/ppocr_keys_v1.txt",
+  "upstream_licence": "Apache-2.0",
+  "sha256": {
+    "det.bin": "fb3de1a3071f8a3b33916a8f521b41f586783661536d269a4152d89537f1e518",
+    "det.param": "f4c7f5ba72057c2ddbf1a2223fb5ce164501e8a47f94e30f008dcd40c15a95ea",
+    "keys.txt": "28b2362ad4ab2dc38769aa72feb535e3a9ddb3fd2a7585a05920e6393b1dc7f7",
+    "rec.bin": "3820e44654f8c67dbe9eb5296a6b47ccc47ec21d34dbd546c891da3681da5738",
+    "rec.param": "adcdb4086c830b21bfa7be6f4ad5c54105b4cc34911f75cc708e50b0eabb74b6"
+  }
+}
