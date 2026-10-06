@@ -2,7 +2,7 @@
 
 An offline Android wanted-book finder for op shops. Sweep the camera across a shelf; potential matches get a box in the live view. Built with PP-OCRv4 Mobile, NCNN, CameraX and OpenCV, with the Pixel 10 as the first testing target.
 
-**Version 0.5.0 — real-shelf accuracy and Pixel 10 performance still need device testing.** A box is a prompt to check a book yourself, not a confirmed identification.
+**Version 0.5.1 — real-shelf accuracy and Pixel 10 performance still need device testing.** A box is a prompt to check a book yourself, not a confirmed identification.
 
 ## Using the app
 
@@ -18,7 +18,7 @@ Wanted entries can be edited, disabled and deleted. **Import/Export** uses the A
 
 ## Upgrading from an earlier version
 
-**Export your wanted list before replacing the installed APK.** GitHub builds currently use per-run debug keys, so Android may require uninstalling the old app before installing the new one. Reimport your exported JSON afterwards. Version 0.5.0 keeps the same list format. Builds from the same Android Studio installation normally share its local debug key.
+**Export your wanted list before replacing the installed APK.** GitHub builds currently use per-run debug keys, so Android may require uninstalling the old app before installing the new one. Reimport your exported JSON afterwards. Version 0.5.1 keeps the same list format. Builds from the same Android Studio installation normally share its local debug key.
 
 ## Install and build
 
@@ -44,6 +44,12 @@ Windows: use `gradlew.bat`. The Gradle 8.13 wrapper is included; Android Gradle 
 ### GitHub APK
 
 [Android build](https://github.com/pointandyshoot/BookScanner/actions/workflows/android.yml) tests, lints and builds the app on pushes and pull requests. Open a successful run and download **BookScanner-debug** under Artifacts, unzip it, then install `app-arm64-v8a-debug.apk` on the phone. GitHub sign-in is needed to download workflow artifacts. Android may ask you to allow installation from the app opening the APK. Each clean CI runner uses a new debug signing key; uninstall an older differently signed build before installing (export your wanted list first), or build consistently with Android Studio on your own computer.
+
+## Version 0.5.1: clearer discovery locations
+
+- Photo review uses contrasting rectangular outlines around matched text, with a minimum visible size for small clues. Outlines draw after labels so labels cannot cover them. Numbered badges keep the overview readable; the Hints list uses the same numbers. Selecting a discovery fits the full text region into view and marks it more strongly, with its full label.
+- **Review** prefers a photo containing hints. In capture view, **Batch hints** lists discoveries across every photo and opens the correct photo/region. Tap the batch status in either view to browse all discoveries.
+- Rendered-pixel tests check an outline on reduced-resolution review and after focus. UI tests verify that Review opens a later matching photo when the first photo has no hints. About reads installed version 0.5.1.
 
 ## Version 0.5.0: capture and review shelf photos
 

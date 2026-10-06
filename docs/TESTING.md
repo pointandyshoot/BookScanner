@@ -34,3 +34,7 @@ The x86 emulator verifies the float32 fallback and the Java/JNI diagnostics path
 Automated checks cover section coverage and bounded source crops; generated still scenes verify both text orientations, original-photo hint coordinates, monotonic progress, cancellation and EXIF-aware bounded JPEG decoding. No private media is in the tests.
 
 On Pixel: take a portrait and landscape shot; start a three-photo burst while panning gently; verify focus, clarity and spacing; import an existing shelf photo; check both meters, progressive hints and the eight-photo limit. Open Review while the queue runs, navigate, pinch/pan, double-tap reset and tap a discovery. Rotate during OCR and during capture. Stop/resume, Clear during inference/capture/import, retry a failed read, leave and return to live scanning. Verify old callbacks cannot restore cleared photos or stale hints, and that the live scanner releases the camera before capture mode binds it. Test denied permission and returning from background. Measure actual Pixel latency; host timing is not a phone benchmark.
+
+## Photo highlights (0.5.1)
+
+Verify Batch hints across several photos, including a first photo without matches. Review should prefer a matching photo. Tap a batch discovery to open its specific photo and focus its orange rectangle. Check outlines on light/dark spines, after zoom, and for small/split text. Automated rendered-pixel checks cover source-to-review scaling and focus; an activity test covers later-photo discovery selection.

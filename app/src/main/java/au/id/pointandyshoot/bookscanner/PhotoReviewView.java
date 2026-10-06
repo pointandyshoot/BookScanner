@@ -12,6 +12,7 @@ final class PhotoReviewView extends View {
     private List<LiveTracker.Detection> hits=List.of();
     private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG);
     private float zoom=1,panX,panY;
+    private LiveTracker.Detection selectedHint;
     private final ScaleGestureDetector scaling;
     private final GestureDetector gestures;
     PhotoReviewView(Context context){
@@ -37,10 +38,13 @@ final class PhotoReviewView extends View {
     }
     void hints(List<LiveTracker.Detection> value,int width,int height){hits=List.copyOf(value);if(width>0&&height>0){sourceWidth=width;sourceHeight=height;}invalidate();}
     void clear(){photo(null,1,1);hits=List.of();}
-    private void reset(){zoom=1;panX=panY=0;invalidate();}
+    private void reset(){zoom=1;panX=panY=0;selectedHint=null;invalidate();}
     void focus(LiveTracker.Detection hit){
         if(bitmap==null)return;float[] b=LiveTracker.bounds(hit.quad);
-        zoom=4;float fit=Math.min(getWidth()/(float)sourceWidth,getHeight()/(float)sourceHeight);
+        float fit=Math.min(getWidth()/(float)sourceWidth,getHeight()/(float)sourceHeight);
+        if(fit<=0)return;
+        zoom=Math.max(1,Math.min(8,Math.min(getWidth()*.65f/(Math.max(1,b[2]-b[0])*fit),getHeight()*.65f/(Math.max(1,b[3]-b[1])*fit))));
+        selectedHint=hit;
         panX=-( (b[0]+b[2])/2-sourceWidth/2f)*fit*zoom;
         panY=-( (b[1]+b[3])/2-sourceHeight/2f)*fit*zoom;invalidate();
     }
@@ -53,17 +57,26 @@ final class PhotoReviewView extends View {
         paint.setStyle(Paint.Style.FILL);paint.setColor(Color.WHITE);
         canvas.drawBitmap(bitmap,null,new RectF(dx,dy,dx+sourceWidth*scale,dy+sourceHeight*scale),paint);
         float density=getResources().getDisplayMetrics().density;
-        for(LiveTracker.Detection hit:hits){
-            Path path=new Path();path.moveTo(dx+hit.quad[0]*scale,dy+hit.quad[1]*scale);
-            for(int i=2;i<8;i+=2)path.lineTo(dx+hit.quad[i]*scale,dy+hit.quad[i+1]*scale);path.close();
-            paint.setColor(Color.rgb(255,160,48));paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth(3*density);canvas.drawPath(path,paint);
+        for(int index=0;index<hits.size();index++){
+            LiveTracker.Detection hit=hits.get(index);
             float[] b=LiveTracker.bounds(hit.quad);if(dx+b[2]*scale<0||dx+b[0]*scale>getWidth()||dy+b[3]*scale<0||dy+b[1]*scale>getHeight())continue;
-            paint.setStyle(Paint.Style.FILL);paint.setTextSize(13*density);String label=hit.label+(hit.reason.contains("check title")?" · check title":" · possible");
+            paint.setStyle(Paint.Style.FILL);paint.setTextSize(13*density);String label=hit==selectedHint?hit.label+(hit.reason.contains("check title")?" · check title":" · possible"):Integer.toString(index+1);
             while(label.length()>3&&paint.measureText(label)>getWidth()-20*density)label=label.substring(0,label.length()-2)+"…";
             float x=Math.max(8*density,Math.min(dx+b[0]*scale,getWidth()-paint.measureText(label)-8*density));
             float y=Math.max(22*density,Math.min(getHeight()-6*density,dy+b[1]*scale-6*density));
             paint.setColor(Color.argb(230,17,25,22));canvas.drawRect(x-3*density,y-17*density,x+paint.measureText(label)+3*density,y+5*density,paint);
             paint.setColor(Color.rgb(255,160,48));canvas.drawText(label,x,y,paint);
+        }
+        // Draw outlines after every label so a label cannot hide a neighbouring match.
+        for(LiveTracker.Detection hit:hits){
+            float[] b=LiveTracker.bounds(hit.quad);
+            RectF box=new RectF(dx+b[0]*scale,dy+b[1]*scale,dx+b[2]*scale,dy+b[3]*scale);
+            if(box.right<0||box.left>getWidth()||box.bottom<0||box.top>getHeight())continue;
+            if(box.width()<12*density)box.inset(-(12*density-box.width())/2,0);
+            if(box.height()<12*density)box.inset(0,-(12*density-box.height())/2);
+            if(hit==selectedHint){paint.setStyle(Paint.Style.FILL);paint.setColor(Color.argb(45,255,160,48));canvas.drawRect(box,paint);}
+            paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth((hit==selectedHint?7:6)*density);paint.setColor(Color.rgb(12,18,15));canvas.drawRect(box,paint);
+            paint.setStrokeWidth((hit==selectedHint?4:3)*density);paint.setColor(Color.rgb(255,160,48));canvas.drawRect(box,paint);
         }
     }
 }

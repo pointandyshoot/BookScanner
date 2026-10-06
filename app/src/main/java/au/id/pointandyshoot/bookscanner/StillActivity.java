@@ -78,7 +78,7 @@ public final class StillActivity extends ComponentActivity {
         LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(Color.rgb(17,25,22));setContentView(root);
         ViewCompat.setOnApplyWindowInsetsListener(root,(v,insets)->{var bars=insets.getInsets(WindowInsetsCompat.Type.systemBars());v.setPadding(bars.left,bars.top,bars.right,bars.bottom);return insets;});ViewCompat.requestApplyInsets(root);
         LinearLayout header=row();TextView title=text("Shelf photos");title.setTextSize(22);weighted(header,title);header.addView(button("Live",this::leave));root.addView(header);
-        batchText=text("");root.addView(batchText);batchProgress=meter("Batch processing progress");root.addView(batchProgress,new LinearLayout.LayoutParams(-1,dp(8)));
+        batchText=text("");batchText.setOnClickListener(v->batchDiscoveries());batchText.setContentDescription("Batch discoveries. Tap to review matching photos.");root.addView(batchText);batchProgress=meter("Batch processing progress");root.addView(batchProgress,new LinearLayout.LayoutParams(-1,dp(8)));
         workText=text("");root.addView(workText);photoProgress=meter("Current photo processing progress");root.addView(photoProgress,new LinearLayout.LayoutParams(-1,dp(8)));
         frame=new FrameLayout(this);preview=new PreviewView(this);preview.setImplementationMode(PreviewView.ImplementationMode.COMPATIBLE);preview.setScaleType(PreviewView.ScaleType.FIT_CENTER);
         review=new PhotoReviewView(this);frame.addView(preview,new FrameLayout.LayoutParams(-1,-1));frame.addView(review,new FrameLayout.LayoutParams(-1,-1));root.addView(frame,new LinearLayout.LayoutParams(-1,0,1));
@@ -87,7 +87,7 @@ public final class StillActivity extends ComponentActivity {
         LinearLayout navigation=row();previousButton=button("Previous",()->select(selected-1));nextButton=button("Next",()->select(selected+1));discoveriesButton=button("Discoveries",this::discoveries);weighted(navigation,previousButton);weighted(navigation,discoveriesButton);weighted(navigation,nextButton);root.addView(navigation);
         LinearLayout controls=row();captureButton=button("Capture",()->{if(ContextCompat.checkSelfPermission(this,Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED)permission.launch(Manifest.permission.CAMERA);else{stopBurst();capturePhoto();}});
         burstButton=button("Burst (3)",()->{if(burstRemaining>0){stopBurst();return;}burstRemaining=Math.min(3,PhotoSession.LIMIT-session.shots.size());capturePhoto();});
-        reviewButton=button("Review",()->{if(showingPhoto)showCamera();else if(!session.shots.isEmpty())select(Math.max(0,selected));});weighted(controls,captureButton);weighted(controls,burstButton);weighted(controls,reviewButton);root.addView(controls);
+        reviewButton=button("Review",()->{if(showingPhoto)showCamera();else if(!session.shots.isEmpty())select(reviewIndex());});weighted(controls,captureButton);weighted(controls,burstButton);weighted(controls,reviewButton);root.addView(controls);
         LinearLayout actions=row();weighted(actions,button("Import",()->importPhotos.launch(new String[]{"image/*"})));stopButton=button("Stop",()->{if(session.paused())session.resumeProcessing();else{stopBurst();session.stopProcessing();}});weighted(actions,stopButton);
         weighted(actions,button("Clear",()->{stopBurst();session.clear();displayToken++;loaded=loading=null;review.clear();selected=-1;showCamera();}));root.addView(actions);
         LinearLayout tools=row();torchButton=button("Torch",()->{if(camera!=null&&camera.getCameraInfo().hasFlashUnit()){torch=!torch;camera.getCameraControl().enableTorch(torch);render();}});tools.addView(torchButton);weighted(tools,text("Tap to focus · pan gently during burst\nReview: pinch to zoom · double tap to reset"));root.addView(tools);
@@ -111,14 +111,14 @@ public final class StillActivity extends ComponentActivity {
         previousButton.setEnabled(selected>0);nextButton.setEnabled(selected>=0&&selected<session.shots.size()-1);
         var shot=selected>=0&&selected<session.shots.size()?session.shots.get(selected):null;
         photoText.setText(shot==null?"Up to eight photos · temporary storage":shot.name+" / "+session.shots.size()+" · "+shot.hits.size()+" hints · "+shot.stage+(shot.state==PhotoSession.State.FAILED?" · tap Discoveries to retry":""));
-        discoveriesButton.setEnabled(shot!=null);discoveriesButton.setText(shot==null?"Discoveries":"Hints ("+shot.hits.size()+")");
+        discoveriesButton.setEnabled(showingPhoto?shot!=null:!session.shots.isEmpty());discoveriesButton.setText(showingPhoto&&shot!=null?"Hints ("+shot.hits.size()+")":"Batch hints ("+hints+")");
         review.setVisibility(showingPhoto?View.VISIBLE:View.GONE);preview.setVisibility(showingPhoto?View.GONE:View.VISIBLE);
         torchButton.setEnabled(!showingPhoto&&camera!=null&&camera.getCameraInfo().hasFlashUnit());torchButton.setText(torch?"Torch on":"Torch");
         if(showingPhoto&&shot!=null){if(loaded==shot)review.hints(shot.hits,shot.width,shot.height);else if(loading!=shot&&shot.state!=PhotoSession.State.CAPTURING)loadReview(shot);}
         if(visible&&(reading!=null||capturing||burstRemaining>0))getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);else getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
     }
     private void select(int index){
-        if(index<0||index>=session.shots.size())return;stopBurst();selected=index;showingPhoto=true;stopCamera();loaded=loading=null;displayToken++;review.clear();render();
+        if(index<0||index>=session.shots.size())return;stopBurst();selected=index;pendingFocus=null;showingPhoto=true;stopCamera();loaded=loading=null;displayToken++;review.clear();render();
     }
     private void loadReview(PhotoSession.Shot shot){
         loading=shot;int token=++displayToken;
@@ -129,12 +129,30 @@ public final class StillActivity extends ComponentActivity {
             }catch(Exception|OutOfMemoryError e){runOnUiThread(()->{if(token==displayToken&&!destroyed){loaded=shot;loading=null;toast("Photo couldn’t open. Retry or clear this batch.");}});}finally{if(bitmap!=null)bitmap.recycle();}
         });
     }
+    private int reviewIndex(){
+        if(selected>=0&&selected<session.shots.size()&&!session.shots.get(selected).hits.isEmpty())return selected;
+        for(int i=0;i<session.shots.size();i++)if(!session.shots.get(i).hits.isEmpty())return i;
+        return Math.max(0,selected);
+    }
+    private void batchDiscoveries(){
+        List<String> labels=new ArrayList<>();List<Integer> photos=new ArrayList<>();List<LiveTracker.Detection> hits=new ArrayList<>();
+        for(int i=0;i<session.shots.size();i++)for(int number=0;number<session.shots.get(i).hits.size();number++){
+            var hit=session.shots.get(i).hits.get(number);
+            labels.add(session.shots.get(i).name+" · "+(number+1)+". "+hit.label+(hit.reason.contains("check title")?" · check title":" · possible"));photos.add(i);hits.add(hit);
+        }
+        if(hits.isEmpty()){toast("No discoveries yet. Open Review to inspect a photo.");return;}
+        new AlertDialog.Builder(this).setTitle("Batch discoveries").setItems(labels.toArray(String[]::new),(d,i)->{
+            int index=photos.get(i);if(index>=session.shots.size())return;select(index);pendingFocus=hits.get(i);
+        }).setPositiveButton("Done",null).show();
+    }
     private void discoveries(){
+        if(!showingPhoto){batchDiscoveries();return;}
         if(selected<0||selected>=session.shots.size())return;var shot=session.shots.get(selected);
         if(shot.state==PhotoSession.State.FAILED){session.retry(shot);return;}
         List<LiveTracker.Detection> hits=shot.hits;
         if(hits.isEmpty()){toast("No hints yet. Photos continue processing in the queue.");return;}
-        new AlertDialog.Builder(this).setTitle(shot.name+" discoveries").setItems(hits.stream().map(h->h.label+(h.reason.contains("check title")?" · check title":" · possible")).toArray(String[]::new),(d,i)->{if(!showingPhoto)select(selected);if(loaded==shot)review.focus(hits.get(i));else pendingFocus=hits.get(i);}).setPositiveButton("Done",null).show();
+        String[] names=new String[hits.size()];for(int i=0;i<hits.size();i++){var hit=hits.get(i);names[i]=(i+1)+". "+hit.label+(hit.reason.contains("check title")?" · check title":" · possible");}
+        new AlertDialog.Builder(this).setTitle(shot.name+" discoveries").setItems(names,(d,i)->{if(!showingPhoto)select(selected);if(loaded==shot)review.focus(hits.get(i));else pendingFocus=hits.get(i);}).setPositiveButton("Done",null).show();
     }
     private void showCamera(){showingPhoto=false;displayToken++;loaded=loading=null;review.clear();render();if(visible)preview.post(this::startCamera);}
     private void capturePhoto(){
