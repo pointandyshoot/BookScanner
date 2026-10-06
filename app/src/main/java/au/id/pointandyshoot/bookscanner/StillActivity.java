@@ -91,6 +91,12 @@ public final class StillActivity extends ComponentActivity {
         LinearLayout actions=row();weighted(actions,button("Import",()->importPhotos.launch(new String[]{"image/*"})));stopButton=button("Stop",()->{if(session.paused())session.resumeProcessing();else{stopBurst();session.stopProcessing();}});weighted(actions,stopButton);
         weighted(actions,button("Clear",()->{stopBurst();session.clear();displayToken++;loaded=loading=null;review.clear();selected=-1;showCamera();}));root.addView(actions);
         LinearLayout tools=row();torchButton=button("Torch",()->{if(camera!=null&&camera.getCameraInfo().hasFlashUnit()){torch=!torch;camera.getCameraControl().enableTorch(torch);render();}});tools.addView(torchButton);weighted(tools,text("Tap to focus · pan gently during burst\nReview: pinch to zoom · double tap to reset"));root.addView(tools);
+        if(getResources().getConfiguration().orientation==android.content.res.Configuration.ORIENTATION_LANDSCAPE){
+            root.removeView(frame);LinearLayout panel=new LinearLayout(this);panel.setOrientation(LinearLayout.VERTICAL);
+            while(root.getChildCount()>0){View child=root.getChildAt(0);root.removeView(child);panel.addView(child,new LinearLayout.LayoutParams(-1,-2));}
+            ScrollView scroll=new ScrollView(this);scroll.addView(panel);root.setOrientation(LinearLayout.HORIZONTAL);
+            root.addView(scroll,new LinearLayout.LayoutParams(dp(280),-1));root.addView(frame,new LinearLayout.LayoutParams(0,-1,1));
+        }
     }
     private void render(){
         if(destroyed)return;int done=0,failed=0,sum=0,hints=0;PhotoSession.Shot reading=null;

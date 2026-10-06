@@ -10,7 +10,7 @@ Discovery cycles through a full view, two lower shelf bands, then one upper shel
 
 Fast jobs rotate within the sixteen largest regions, reading at most twelve; a 0.4-second soft recognition budget is checked after at least two regions. This avoids spending most of a short pass on tiny isolated glyphs. Detail jobs rotate within the full accepted region pool, reading at most 24 with a 0.8-second soft budget after at least four regions. The start advances by five regions per job. Budgets begin after detection; individual inference cannot be interrupted. Recognition tries the opposite reading direction unless the first reading has confidence at least 0.93. Direction is chosen by OCR confidence independently of wanted text. Nonblank readings with confidence at least 0.35 enter matching.
 
-Late OCR results can use up to eight seconds of bounded motion history. A current texture comparison rejects moved or vanished regions. Mild camera noise or exposure shifts can still be treated as stationary when motion fitting fails. Optional scan diagnostics expose detector dimensions, precision mode, detected/visited/read/matched counts and overlay acceptance. An additional active-track count distinguishes current highlights from results of the latest OCR pass. No camera image or recognised text is stored.
+Late OCR results can use up to eight seconds of bounded motion history. A current texture comparison rejects moved or vanished regions. Mild camera noise or exposure shifts can still be treated as stationary when motion fitting fails. Optional scan diagnostics expose detector dimensions, precision mode, detected/visited/read/matched counts and overlay acceptance. An additional active-track count distinguishes current highlights from results of the latest OCR pass. Live scanning stores no camera image or recognised text.
 
 ## Immediate hints
 
@@ -32,7 +32,7 @@ A bounded eight-second / 180-step camera-motion history maps late OCR polygons f
 
 ## Lifecycle, privacy and limits
 
-Pausing or opening the list invalidates the session and clears tracker state on its owning executor. An already-running OCR task is allowed to finish, but cannot publish stale results. All camera content, reference patches and motion history are transient memory. Only lists/options persist. The manifest removes dependency networking permissions and enables normal CAMERA/VIBRATE permissions; no network OCR or telemetry.
+Pausing or opening the list invalidates the session and clears tracker state on its owning executor. An already-running OCR task is allowed to finish, but cannot publish stale results. Live camera content, reference patches and motion history are transient memory. The wanted list and options persist; Shelf photos uses temporary private cache as described below. The manifest removes dependency networking permissions and enables normal CAMERA/VIBRATE permissions; no network OCR or telemetry.
 
 Tracking can still fail under fast movement, blur, glare, occlusion, identical neighbouring textures or strong perspective change. In those cases the app fades/removes a track and reacquires it by OCR. No claim is made of direct Pixel Tensor acceleration or measured shelf-reading accuracy. The native OpenCV runtime increases APK size.
 
