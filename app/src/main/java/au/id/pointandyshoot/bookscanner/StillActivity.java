@@ -85,7 +85,7 @@ public final class StillActivity extends ComponentActivity {
         preview.setOnTouchListener((v,e)->{if(e.getAction()==MotionEvent.ACTION_UP){v.performClick();if(camera!=null){var point=preview.getMeteringPointFactory().createPoint(e.getX(),e.getY());camera.getCameraControl().startFocusAndMetering(new FocusMeteringAction.Builder(point).setAutoCancelDuration(3,TimeUnit.SECONDS).build());}}return true;});
         photoText=text("");root.addView(photoText);
         LinearLayout navigation=row();previousButton=button("Previous",()->select(selected-1));nextButton=button("Next",()->select(selected+1));discoveriesButton=button("Discoveries",this::discoveries);weighted(navigation,previousButton);weighted(navigation,discoveriesButton);weighted(navigation,nextButton);root.addView(navigation);
-        LinearLayout controls=row();captureButton=button("Capture",()->{if(ContextCompat.checkSelfPermission(this,Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED)permission.launch(Manifest.permission.CAMERA);else{burstRemaining=0;capturePhoto();}});
+        LinearLayout controls=row();captureButton=button("Capture",()->{if(ContextCompat.checkSelfPermission(this,Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED)permission.launch(Manifest.permission.CAMERA);else{stopBurst();capturePhoto();}});
         burstButton=button("Burst (3)",()->{if(burstRemaining>0){stopBurst();return;}burstRemaining=Math.min(3,PhotoSession.LIMIT-session.shots.size());capturePhoto();});
         reviewButton=button("Review",()->{if(showingPhoto)showCamera();else if(!session.shots.isEmpty())select(Math.max(0,selected));});weighted(controls,captureButton);weighted(controls,burstButton);weighted(controls,reviewButton);root.addView(controls);
         LinearLayout actions=row();weighted(actions,button("Import",()->importPhotos.launch(new String[]{"image/*"})));stopButton=button("Stop",()->{if(session.paused())session.resumeProcessing();else{stopBurst();session.stopProcessing();}});weighted(actions,stopButton);
@@ -146,7 +146,7 @@ public final class StillActivity extends ComponentActivity {
             @Override public void onError(ImageCaptureException error){capturing=false;session.failed(shot,"Capture failed. Clear and try again.");stopBurst();render();}
         });
     }
-    private void stopBurst(){burstRemaining=0;main.removeCallbacks(nextBurst);}
+    private void stopBurst(){burstRemaining=0;main.removeCallbacks(nextBurst);if(burstButton!=null)render();}
     private void startCamera(){
         if(destroyed||!visible||showingPhoto)return;
         if(ContextCompat.checkSelfPermission(this,Manifest.permission.CAMERA)!=PackageManager.PERMISSION_GRANTED){if(!askedPermission){askedPermission=true;permission.launch(Manifest.permission.CAMERA);}render();return;}
