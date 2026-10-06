@@ -1,20 +1,22 @@
-# Architecture (0.2)
+# Architecture (0.4.3)
 
-## Concurrent pipeline
+## Discovery and recognition
 
-`CameraX ImageAnalysis` uses `KEEP_ONLY_LATEST` at a requested 2560 × 1920, with a supported-size fallback and higher-resolution preference. It shares a viewport with `PreviewView` in `FIT_CENTER` mode. Sensor rotation and crop are applied to both analysis representations.
+CameraX supplies a requested 2560 × 1920 analysis frame with a supported-size fallback. Preview and analysis share a viewport. Analysis samples a grayscale tracking image up to 640 pixels on its long edge; the full-detail upright luminance image is copied only when the separate OCR executor is idle. One OCR job runs at a time, and session generations reject obsolete results.
 
-The analysis executor samples a maximum 640-pixel-long-edge grayscale tracking image directly from the Y plane, respecting row/pixel stride. It aims for a 65 ms interval (120 ms when warm). It closes each camera proxy after copying, without waiting for OCR. `LiveTracker` owns its native Mats exclusively on this thread.
+The PP-OCRv4 Mobile detector and recogniser run offline using pinned NCNN source and verified bundled weights. NCNN uses two CPU threads and packed SIMD layouts. Half-precision storage/arithmetic is enabled only when ARM82 kernels are compiled and runtime CPU feature detection confirms ARM SIMD half-precision support; otherwise it uses float32. NCNN extraction converts returned tensors to float32 for JNI. Vulkan remains disabled. Default detector input is capped at 768 pixels on its long edge; two passes per sixteen use 960 pixels, alternating lower and upper shelf detail. Recognition strips are still taken from the original reading bitmap, rather than the reduced detector image. Its probability-map threshold is 0.20 and contour confidence cut-off is 0.40. Rotated rectangles are expanded and rectified from the source into 48-pixel-high recognition strips. This handles rotation, not all perspective distortion or curved spines.
 
-When the OCR executor is idle, the analyser copies an upright full-detail image and gives ownership to that worker. One job performs a full-view read plus one detail-region read. Every pass can publish results immediately through a single replaceable pending batch. There is no unbounded image/job queue. Session generations reject callbacks after pause, navigation, list changes, recreation or shutdown. Bitmap ownership is released in `finally`, and the recogniser is closed after the OCR worker drains.
+Discovery cycles through a full view, two lower shelf bands, then one upper shelf band. Bands span the full image width and 60% of its height, overlapping by 20%. Detail inputs rotate by 90° before detection: rectifying a region after detection alone cannot repair a name split or missed by the detector. Full-view jobs alternate 90° and upright orientation to retain horizontal-text coverage. A tracked region may receive a reread once per twelve jobs if its last reading is at least four seconds old. Experimental spine proposals receive only one slot per twelve jobs, preserving ordinary coverage when enabled.
 
-## Small and angled text
+Fast jobs rotate within the sixteen largest regions, reading at most twelve; a 0.4-second soft recognition budget is checked after at least two regions. This avoids spending most of a short pass on tiny isolated glyphs. Detail jobs rotate within the full accepted region pool, reading at most 24 with a 0.8-second soft budget after at least four regions. The start advances by five regions per job. Budgets begin after detection; individual inference cannot be interrupted. Recognition tries the opposite reading direction unless the first reading has confidence at least 0.93. Direction is chosen by OCR confidence independently of wanted text. Nonblank readings with confidence at least 0.35 enter matching.
 
-`ReadingImage` combines crop, optional enlargement, arbitrary rotation and translation into one Android matrix, with a white border. Its inverse maps OCR corner polygons back into the upright full-detail image. The overlay draws these polygons rather than an axis-aligned rectangle that loses text orientation.
+Late OCR results can use up to eight seconds of bounded motion history. A current texture comparison rejects moved or vanished regions. Mild camera noise or exposure shifts can still be treated as stationary when motion fitting fails. Optional scan diagnostics expose detector dimensions, precision mode, detected/visited/read/matched counts and overlay acceptance. An additional active-track count distinguishes current highlights from results of the latest OCR pass. Live scanning stores no camera image or recognised text.
 
-`ReadingSchedule` preserves right-angle discovery (90°, 180°, 270°, 0°) and exploration even after a success. Each job also uses a local tilt estimate from Canny/Hough line segments, modulo 90°. Estimates are continuous angles. A detail region can have a different tilt from the full shelf. With no reliable estimate, fixed ±15°, ±30°, ±45° offsets supplement the coarse angles. This is a bounded search, not exhaustive perspective rectification.
+## Immediate hints
 
-Four 65%-size overlapping tiles retain native image detail; their schedule is offset from the orientation schedule so a tile is not locked to one quadrant. A previously detected region can receive a targeted reread after 2.5 seconds. Optional spine strips replace some detail tiles; they never disable full-view discovery. OCR retains the bundled ML Kit Latin recogniser and the existing local fuzzy title/author/alias matcher. No cloud model or book database is queried. Enlargement does not create missing source detail.
+One orange box means a possible match for the user to inspect. There is no multi-frame confirmation state. Exact distinctive four-letter words, fuzzy five-letter-or-longer fragments and whole-name/title similarity can create hints. Common publishing words are excluded from fragment matching and short titles require exact whole words. Author clues for a specific title are labelled “check title”. Internal strong evidence only prefers a more complete label; it never controls visibility or colour.
+
+Nearby similarly oriented lines can be paired within one OCR pass. Geometric checks limit centre displacement, angle and height mismatch. Paired evidence stays anchored to the current text region rather than inventing a whole-book boundary. It is a heuristic and may join neighbouring spines; the user has chosen higher recall with more false positives.
 
 ## Tracking and late results
 
@@ -22,7 +24,7 @@ Each displayed track retains its wanted-entry identity, oriented polygon and a 9
 
 A track has no fixed lifetime while visual checks succeed. Failed checks allow up to one second of faded grace; later failure removes it. This is texture tracking, not semantic proof the object is a book. Blank or changed scenes must not keep a box alive. A heartbeat watchdog clears the overlay if analysis itself stalls for 600 ms; this is independent of OCR latency.
 
-A bounded three-second / 60-step camera-motion history maps late OCR polygons forward. Results must have a continuous reliable transform path and match their capture-time reference texture in the current frame. Results too old, from a reset session, or from an untraceable movement are rejected. This avoids displaying stale coordinates while permitting OCR calls longer than the former 700 ms cutoff.
+A bounded eight-second / 180-step camera-motion history maps late OCR polygons forward. Results must have a continuous reliable transform path and match their capture-time reference texture in the current frame. Results too old, from a reset session, or from an untraceable movement are rejected. This avoids displaying stale coordinates while permitting OCR calls longer than the former 700 ms cutoff.
 
 ## Appearance signalling
 
@@ -30,7 +32,7 @@ A bounded three-second / 60-step camera-motion history maps late OCR polygons fo
 
 ## Lifecycle, privacy and limits
 
-Pausing or opening the list invalidates the session and clears tracker state on its owning executor. An already-running OCR task is allowed to finish, but cannot publish stale results. All camera content, reference patches and motion history are transient memory. Only lists/options persist. The manifest removes dependency networking permissions and enables normal CAMERA/VIBRATE permissions; no network OCR or telemetry.
+Pausing or opening the list invalidates the session and clears tracker state on its owning executor. An already-running OCR task is allowed to finish, but cannot publish stale results. Live camera content, reference patches and motion history are transient memory. The wanted list and options persist; Shelf photos uses temporary private cache as described below. The manifest removes dependency networking permissions and enables normal CAMERA/VIBRATE permissions; no network OCR or telemetry.
 
 Tracking can still fail under fast movement, blur, glare, occlusion, identical neighbouring textures or strong perspective change. In those cases the app fades/removes a track and reacquires it by OCR. No claim is made of direct Pixel Tensor acceleration or measured shelf-reading accuracy. The native OpenCV runtime increases APK size.
 
@@ -40,8 +42,17 @@ The version 1 JSON format is unchanged: `version: 1`, `books: []`, with each ent
 
 ## References
 
-- [ML Kit input image guidelines](https://developers.google.com/ml-kit/vision/text-recognition/v2/android#input-image-guidelines): recognition depends on the number of pixels per character, focus and image quality.
+- [PaddleOCR](https://github.com/PaddlePaddle/PaddleOCR/tree/v2.7.0)
+- [NCNN](https://github.com/Tencent/ncnn)
 - [OpenCV Android setup](https://docs.opencv.org/4.x/d5/df8/tutorial_dev_with_OCV_on_Android.html)
 - [OpenCV pyramidal optical flow](https://docs.opencv.org/4.x/javadoc/org/opencv/video/Video.html)
 - [OpenCV robust affine estimation](https://docs.opencv.org/4.x/javadoc/org/opencv/calib3d/Calib3d.html)
 - [CameraX output transforms](https://developer.android.com/media/camera/camerax/transform-output)
+
+## Still-photo queue (0.5.0)
+
+StillActivity binds CameraX Preview and ImageCapture, without live ImageAnalysis. PhotoSession is retained by ViewModel across configuration changes and owns a serial processing executor. Each JPEG/import copy stays in a private per-session cache directory. ImageDecoder applies EXIF orientation, software allocation and sRGB; source decode caps the long edge at 4096, review at 2048. The review view maps both image and hints through the same pan/zoom transform. Native full-resolution work is bounded to one photo plus one section at a time.
+
+StillPlan covers the source with 30%-overlapping sections, at least 2×3 or 3×2 for ordinary photos. Each section gets a 960-pixel detector pass at 90° and upright orientation. The still reader visits all accepted regions (up to 96 per section) without the live latency budget, publishes partial hints and percent/phase updates, and merges overlapping hints for the same wanted ID. Percent measures sections and recognised regions, not a remaining-time estimate. Results bypass the motion/texture tracking gate.
+
+The queue holds at most eight reservations, including in-flight captures/imports. UI state and listeners belong to the main thread. Worker callbacks carry a volatile epoch checked again on the main thread; Stop/Clear/close invalidate old results. Stop preserves partial hints and resume requeues cancelled photos. Cleanup waits behind native work on ViewModel clear. The application removes orphan session folders once per process start. Captures finishing after Clear/close are discarded. No user media or recognised text is published.

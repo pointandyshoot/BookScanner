@@ -55,7 +55,7 @@ public final class MainActivity extends ComponentActivity {
     @Override public void onCreate(Bundle state){
         super.onCreate(state);
         store=new WantedStore(this);
-        scanner=new ScanEngine((hits,w,h,time,message,generation,newAppearance)->runOnUiThread(()->{
+        scanner=new ScanEngine(getAssets(),(hits,w,h,time,message,generation,newAppearance)->runOnUiThread(()->{
             if(destroyed || !resumed || listScreen || paused || generation!=scanner.generation())return;
             if(overlay!=null)overlay.update(hits,w,h,time);
             if(status!=null)status.setText(message);
@@ -99,6 +99,7 @@ public final class MainActivity extends ComponentActivity {
     private void showScanner(){
         stopCamera();listScreen=false;installRoot();
         LinearLayout header=horizontal();weighted(header,text("BookScanner",24));
+        header.addView(button("Photos",()->startActivity(new Intent(this,StillActivity.class))));
         header.addView(button("Wanted ("+books.size()+")",this::showList));root.addView(header);
         status=text(books.isEmpty()?"Add books or authors to your wanted list to begin.":"Sweep slowly across a shelf",15);root.addView(status);
         FrameLayout frame=new FrameLayout(this);
@@ -137,6 +138,7 @@ public final class MainActivity extends ComponentActivity {
         });
         root.addView(text("Boxes follow detected text • Gentle buzz on arrival\nTap to focus. Check highlighted books yourself.",12));
         scanner.setBooks(books);scanner.setSpineMode(getPreferences(0).getBoolean("spines",false));
+        scanner.setDiagnostics(getPreferences(0).getBoolean("diagnostics",false));
         if(resumed)preview.post(this::startCamera);
     }
     private void startCamera(){
@@ -193,14 +195,19 @@ public final class MainActivity extends ComponentActivity {
     private void options(){
         boolean current=getPreferences(0).getBoolean("spines",false);
         new AlertDialog.Builder(this).setTitle("Scanning options")
-                .setMultiChoiceItems(new String[]{"Gentle vibration on new detection","Experimental spine crops (may miss books)"},
-                        new boolean[]{getPreferences(0).getBoolean("haptics",true),current},(d,i,checked)->{
+                .setMultiChoiceItems(new String[]{"Gentle vibration on new detection","Experimental spine crops (may miss books)","Show scan diagnostics"},
+                        new boolean[]{getPreferences(0).getBoolean("haptics",true),current,getPreferences(0).getBoolean("diagnostics",false)},(d,i,checked)->{
                     if(i==0)getPreferences(0).edit().putBoolean("haptics",checked).apply();
-                    else {getPreferences(0).edit().putBoolean("spines",checked).apply();scanner.setSpineMode(checked);}})
+                    else if(i==1){getPreferences(0).edit().putBoolean("spines",checked).apply();scanner.setSpineMode(checked);}
+                    else {getPreferences(0).edit().putBoolean("diagnostics",checked).apply();scanner.setDiagnostics(checked);}})
                 .setPositiveButton("Done",null).setNeutralButton("About",(d,w)->new AlertDialog.Builder(this)
-                        .setTitle("BookScanner 0.2")
-                        .setMessage("Offline ML Kit text recognition. Live visual tracking and optional detection vibration. No saved photos or scan history.\n\nPreprocessing inspired by Sappelen/BookSpineScanner (CC0 1.0). Independently implemented for Android.\n\nGoogle ML Kit is governed by Google’s ML Kit terms. AndroidX and OpenCV: Apache 2.0. See repository notices for source links.")
+                        .setTitle("BookScanner "+versionName())
+                        .setMessage("Offline PP-OCRv4 Mobile recognition with NCNN. One orange highlight: a possible match for you to check. Live visual tracking and optional detection vibration. Shelf photos captures or imports temporary images for detailed queued reading and zoomable hints. Clear the batch or leave Shelf photos to discard them. Live scanning saves no frames.\n\nPreprocessing inspired by Sappelen/BookSpineScanner (CC0 1.0). Independently implemented for Android.\n\nPaddleOCR, AndroidX and OpenCV: Apache 2.0. NCNN: BSD 3-Clause. See repository notices for source links.")
                         .setPositiveButton("Done",null).show()).show();
+    }
+    private String versionName(){
+        try{return getPackageManager().getPackageInfo(getPackageName(),PackageManager.PackageInfoFlags.of(0)).versionName;}
+        catch(PackageManager.NameNotFoundException e){return "unknown";}
     }
     private void signalDetection(){
         long now=SystemClock.elapsedRealtime();

@@ -9,17 +9,17 @@ import java.util.*;
 
 /** Single analysis-thread owner. Tracks text texture between OCR reads; retains no disk images. */
 final class LiveTracker implements AutoCloseable {
-    static final long GRACE_MS=1000,HISTORY_MS=3000;
+    static final long GRACE_MS=1000,HISTORY_MS=8000;
     static final class Detection {
-        final String id,label,reason;final float[] quad;
-        Detection(String id,String label,String reason,float[] quad){this.id=id;this.label=label;this.reason=reason;this.quad=quad.clone();}
+        final String id,label,reason;final float[] quad;final boolean strong;
+        Detection(String id,String label,String reason,float[] quad,boolean strong){this.id=id;this.label=label;this.reason=reason;this.quad=quad.clone();this.strong=strong;}
     }
     static final class Visible {
-        final Detection detection;final boolean repeated,tracking;final String appearanceId;
-        Visible(Detection d,boolean repeated,boolean tracking,String appearanceId){detection=d;this.repeated=repeated;this.tracking=tracking;this.appearanceId=appearanceId;}
+        final Detection detection;final boolean tracking;final String appearanceId;
+        Visible(Detection d,boolean tracking,String appearanceId){detection=d;this.tracking=tracking;this.appearanceId=appearanceId;}
     }
     private static final class Track {
-        Detection detection;float[] quad;Mat template;long lastGood,lastRead,lastReadSequence;int reads=1;String appearanceId;
+        Detection detection;float[] quad;Mat template;long lastGood,lastRead,lastReadSequence;String appearanceId;
         Track(Detection d,float[] q,Mat t,long now,long seq){detection=d;quad=q;template=t;lastGood=lastRead=now;lastReadSequence=seq;}
     }
     private static final class Lost {
@@ -51,9 +51,9 @@ final class LiveTracker implements AutoCloseable {
             if(previous!=null){
                 Flow flow=flow(previous,next);double[] global=fit(flow.from,flow.to);
                 if(global==null){Mat difference=new Mat();try{Core.absdiff(previous,next,difference);
-                    if(Core.mean(difference).val[0]<2.5)global=new double[]{1,0,0,0,1,0};}finally{difference.release();}}
+                    if(Core.mean(difference).val[0]<8)global=new double[]{1,0,0,0,1,0};}finally{difference.release();}}
                 history.addLast(new Step(sequence,seq,time,global));
-                while(!history.isEmpty()&&(time-history.peekFirst().time>HISTORY_MS||history.size()>60))history.removeFirst();
+                while(!history.isEmpty()&&(time-history.peekFirst().time>HISTORY_MS||history.size()>180))history.removeFirst();
                 Iterator<Track> iterator=tracks.iterator();
                 while(iterator.hasNext()){
                     Track t=iterator.next();List<Point> from=new ArrayList<>(),to=new ArrayList<>();
@@ -72,9 +72,9 @@ final class LiveTracker implements AutoCloseable {
             if(previous!=null)previous.release();previous=next;next=null;sequence=seq;
         }finally{if(next!=null)next.release();}
     }
-    void detections(List<Detection> observations,VisionFrames.Gray capture,long captureSequence,long capturedAt){
-        if(previous==null||now-capturedAt>HISTORY_MS||capture.width!=previous.cols()||capture.height!=previous.rows())return;
-        Mat reference=capture.mat();
+    int detections(List<Detection> observations,VisionFrames.Gray capture,long captureSequence,long capturedAt){
+        if(previous==null||now-capturedAt>HISTORY_MS||capture.width!=previous.cols()||capture.height!=previous.rows())return 0;
+        int applied=0;Mat reference=capture.mat();
         try{
             for(Detection d:observations){
                 float[] original=scale(d.quad,(float)capture.width/capture.sourceWidth,(float)capture.height/capture.sourceHeight);
@@ -86,29 +86,30 @@ final class LiveTracker implements AutoCloseable {
                 Track existing=null;
                 for(Track t:tracks)if(t.detection.id.equals(d.id)&&Geometry.overlap(bounds(t.quad),bounds(q))>.12){existing=t;break;}
                 if(existing!=null){
-                    if(captureSequence>existing.lastReadSequence)existing.reads++;
                     existing.template.release();existing.template=template;existing.quad=q;existing.lastGood=now;
                     existing.lastRead=capturedAt;existing.lastReadSequence=captureSequence;
-                    if(!d.reason.startsWith("Author only")||existing.detection.reason.startsWith("Author only"))existing.detection=d;
+                    if(d.strong||!existing.detection.strong)existing.detection=d;
+                    applied++;
                 }else if(tracks.size()<12){
-                    Track added=new Track(d,q,template,now,captureSequence);
+                    Track added=new Track(d,q,template,capturedAt,captureSequence);added.lastGood=now;
                     added.appearanceId="track-"+(++nextAppearance);
                     Iterator<Lost> lost=recentlyLost.iterator();
                     while(lost.hasNext()) {Lost old=lost.next();if(old.entry.equals(d.id)&&Geometry.overlap(bounds(old.quad),bounds(q))>.2){added.appearanceId=old.key;lost.remove();break;}}
-                    tracks.add(added);
+                    tracks.add(added);applied++;
                 }else template.release();
             }
         }finally{reference.release();}
+        return applied;
     }
     List<Visible> visible(){
         if(previous==null)return List.of();List<Visible> result=new ArrayList<>();
         for(Track t:tracks)result.add(new Visible(new Detection(t.detection.id,t.detection.label,t.detection.reason,
-                scale(t.quad,(float)sourceWidth/previous.cols(),(float)sourceHeight/previous.rows())),t.reads>1,now-t.lastGood<150,t.appearanceId));
+                scale(t.quad,(float)sourceWidth/previous.cols(),(float)sourceHeight/previous.rows()),t.detection.strong),now-t.lastGood<150,t.appearanceId));
         return result;
     }
     float[] recheckRegion(){
         if(previous==null)return null;
-        Track oldest=null;for(Track t:tracks)if(now-t.lastRead>2500&&(oldest==null||t.lastRead<oldest.lastRead))oldest=t;
+        Track oldest=null;for(Track t:tracks)if(now-t.lastRead>4000&&(oldest==null||t.lastRead<oldest.lastRead))oldest=t;
         return oldest==null?null:bounds(scale(oldest.quad,(float)sourceWidth/previous.cols(),(float)sourceHeight/previous.rows()));
     }
     private float[] replay(float[] q,long from){
