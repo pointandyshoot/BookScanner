@@ -99,6 +99,7 @@ public final class MainActivity extends ComponentActivity {
     private void showScanner(){
         stopCamera();listScreen=false;installRoot();
         LinearLayout header=horizontal();weighted(header,text("BookScanner",24));
+        header.addView(button("Photos",()->startActivity(new Intent(this,StillActivity.class))));
         header.addView(button("Wanted ("+books.size()+")",this::showList));root.addView(header);
         status=text(books.isEmpty()?"Add books or authors to your wanted list to begin.":"Sweep slowly across a shelf",15);root.addView(status);
         FrameLayout frame=new FrameLayout(this);
@@ -201,7 +202,7 @@ public final class MainActivity extends ComponentActivity {
                     else {getPreferences(0).edit().putBoolean("diagnostics",checked).apply();scanner.setDiagnostics(checked);}})
                 .setPositiveButton("Done",null).setNeutralButton("About",(d,w)->new AlertDialog.Builder(this)
                         .setTitle("BookScanner "+versionName())
-                        .setMessage("Offline PP-OCRv4 Mobile recognition with NCNN. One orange highlight: a possible match for you to check. Live visual tracking and optional detection vibration. No saved photos or scan history.\n\nPreprocessing inspired by Sappelen/BookSpineScanner (CC0 1.0). Independently implemented for Android.\n\nPaddleOCR, AndroidX and OpenCV: Apache 2.0. NCNN: BSD 3-Clause. See repository notices for source links.")
+                        .setMessage("Offline PP-OCRv4 Mobile recognition with NCNN. One orange highlight: a possible match for you to check. Live visual tracking and optional detection vibration. Shelf photos captures or imports temporary images for detailed queued reading and zoomable hints. Clear the batch or leave Shelf photos to discard them. Live scanning saves no frames.\n\nPreprocessing inspired by Sappelen/BookSpineScanner (CC0 1.0). Independently implemented for Android.\n\nPaddleOCR, AndroidX and OpenCV: Apache 2.0. NCNN: BSD 3-Clause. See repository notices for source links.")
                         .setPositiveButton("Done",null).show()).show();
     }
     private String versionName(){

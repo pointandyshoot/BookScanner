@@ -28,3 +28,9 @@ The x86 emulator verifies the float32 fallback and the Java/JNI diagnostics path
 - Check that existing highlights do not prevent new books being found.
 - Check tracking, no repeated vibration while a box remains visible, pause/resume and list edits.
 - Assess useful hints, nuisance boxes, time to first hint and heat against 0.3.
+
+## Shelf photos (0.5.0)
+
+Automated checks cover section coverage and bounded source crops; generated still scenes verify both text orientations, original-photo hint coordinates, monotonic progress, cancellation and EXIF-aware bounded JPEG decoding. No private media is in the tests.
+
+On Pixel: take a portrait and landscape shot; start a three-photo burst while panning gently; verify focus, clarity and spacing; import an existing shelf photo; check both meters, progressive hints and the eight-photo limit. Open Review while the queue runs, navigate, pinch/pan, double-tap reset and tap a discovery. Rotate during OCR and during capture. Stop/resume, Clear during inference/capture/import, retry a failed read, leave and return to live scanning. Verify old callbacks cannot restore cleared photos or stale hints, and that the live scanner releases the camera before capture mode binds it. Test denied permission and returning from background. Measure actual Pixel latency; host timing is not a phone benchmark.

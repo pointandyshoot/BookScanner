@@ -2,7 +2,7 @@
 
 An offline Android wanted-book finder for op shops. Sweep the camera across a shelf; potential matches get a box in the live view. Built with PP-OCRv4 Mobile, NCNN, CameraX and OpenCV, with the Pixel 10 as the first testing target.
 
-**Version 0.4.3 — real-shelf accuracy and Pixel 10 performance still need device testing.** A box is a prompt to check a book yourself, not a confirmed identification.
+**Version 0.5.0 — real-shelf accuracy and Pixel 10 performance still need device testing.** A box is a prompt to check a book yourself, not a confirmed identification.
 
 ## Using the app
 
@@ -12,13 +12,13 @@ An offline Android wanted-book finder for op shops. Sweep the camera across a sh
 4. **Orange** boxes are immediate hints: a partial title, surname or imperfect reading can highlight a book. There is no confirmation wait or green state. Check the physical book yourself; more false positives are intentional. “Check title” means an author clue for a specific wanted title.
 5. A gentle tick announces a new detection; turn it off in **Options** if preferred. Use **Pause** to pause recognition. The camera preview remains live; leaving the app or opening the wanted list releases the camera.
 
-Keep text reasonably large in the view. Glare, ornate lettering, tightly stacked characters and fast movement can prevent recognition. Try a few books at a time. There is no saved photo, scan history or summary screen. Outlines follow the detected text, not a guaranteed segmentation of the entire book.
+Keep text reasonably large in the view. Glare, ornate lettering, tightly stacked characters and fast movement can prevent recognition. Try a few books at a time. Live scanning keeps no photos or history. Shelf photos keeps a temporary batch until you clear it or leave that screen. Outlines follow the detected text, not a guaranteed segmentation of the entire book.
 
 Wanted entries can be edited, disabled and deleted. **Import/Export** uses the Android document picker and the versioned JSON format in [the example list](docs/wanted-example.json). Import previews the entry count and asks before replacing the existing list. The example is not loaded automatically.
 
 ## Upgrading from an earlier version
 
-**Export your wanted list before replacing the installed APK.** GitHub builds currently use per-run debug keys, so Android may require uninstalling the old app before installing the new one. Reimport your exported JSON afterwards. Version 0.4.3 keeps the same list format. Builds from the same Android Studio installation normally share its local debug key.
+**Export your wanted list before replacing the installed APK.** GitHub builds currently use per-run debug keys, so Android may require uninstalling the old app before installing the new one. Reimport your exported JSON afterwards. Version 0.5.0 keeps the same list format. Builds from the same Android Studio installation normally share its local debug key.
 
 ## Install and build
 
@@ -44,6 +44,17 @@ Windows: use `gradlew.bat`. The Gradle 8.13 wrapper is included; Android Gradle 
 ### GitHub APK
 
 [Android build](https://github.com/pointandyshoot/BookScanner/actions/workflows/android.yml) tests, lints and builds the app on pushes and pull requests. Open a successful run and download **BookScanner-debug** under Artifacts, unzip it, then install `app-arm64-v8a-debug.apk` on the phone. GitHub sign-in is needed to download workflow artifacts. Android may ask you to allow installation from the app opening the APK. Each clean CI runner uses a new debug signing key; uninstall an older differently signed build before installing (export your wanted list first), or build consistently with Android Studio on your own computer.
+
+## Version 0.5.0: capture and review shelf photos
+
+- Tap **Photos** from the live screen. **Capture** takes one quality JPEG; **Burst (3)** takes three spaced shots as you pan, with about 0.9 seconds between completed captures. Actual camera latency is additional. **Stop burst** stops additional shots.
+- **Import** selects existing photos with the Android document picker, including shelf photos taken earlier. No broad media-library permission is needed.
+- Up to eight photos per temporary batch. Each is processed sequentially using overlapping sections, 90° then upright detection and all accepted regions in each section. Original photo coordinates drive the static orange highlights; there is no live tracking gate or live recognition time budget.
+- Batch and current-photo meters show processing progress. Hints arrive progressively. **Review**, **Previous**, **Next**, pinch/drag and double-tap reset let you inspect the photo. Tap **Hints** to focus on a discovery. You can review one photo while another processes.
+- **Stop reads** retains partial hints; **Resume reads** restarts unfinished photos. Failed reads can be retried through the hints button. **Clear** deletes the temporary batch. Leaving the photo screen asks before discarding the batch.
+- Screen rotation retains the queue and progress. A killed process does not resume its batch; orphaned captures are deleted at the next application start.
+- Photos remain offline in private cache, never the gallery. One source photo is decoded at a time (up to 4096 pixels on its long edge); the review copy uses at most 2048 pixels. The wanted list format remains unchanged. About reads installed version 0.5.0.
+- Host experiments on private shelf images supported detailed-crop recognition. Their timing is not a Pixel benchmark. Actual camera capture, burst clarity and processing latency require phone testing.
 
 ## Version 0.4.3: reduce OCR latency
 
@@ -81,7 +92,7 @@ Windows: use `gradlew.bat`. The Gradle 8.13 wrapper is included; Android Gradle 
 
 ## Privacy and storage
 
-Only the wanted list, scanner options and camera-permission prompt state persist locally. Camera frames, OCR crops, reference patches and a short motion-transform history remain in memory and are discarded. No internet permission, analytics, accounts, microphone, GPS or media-library permission. Camera and vibration permissions are used. Network permissions from dependency manifests are explicitly removed. Automatic Android backup is disabled; export a wanted-list backup before uninstalling. The document provider you choose for manual export may itself be cloud-backed.
+The wanted list, scanner options and camera-permission prompt state persist locally. Shelf photos stores up to eight temporary camera/import copies in private cache, cleared on leaving the screen or using Clear, with orphan cleanup at the next application start after process death. Live camera frames, OCR crops, reference patches and a short motion-transform history remain in memory and are discarded. No internet permission, analytics, accounts, microphone, GPS or media-library permission. Camera and vibration permissions are used. Network permissions from dependency manifests are explicitly removed. Automatic Android backup is disabled; export a wanted-list backup before uninstalling. The document provider you choose for manual export may itself be cloud-backed.
 
 ## Documentation
 

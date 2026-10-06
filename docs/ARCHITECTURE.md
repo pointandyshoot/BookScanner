@@ -48,3 +48,11 @@ The version 1 JSON format is unchanged: `version: 1`, `books: []`, with each ent
 - [OpenCV pyramidal optical flow](https://docs.opencv.org/4.x/javadoc/org/opencv/video/Video.html)
 - [OpenCV robust affine estimation](https://docs.opencv.org/4.x/javadoc/org/opencv/calib3d/Calib3d.html)
 - [CameraX output transforms](https://developer.android.com/media/camera/camerax/transform-output)
+
+## Still-photo queue (0.5.0)
+
+StillActivity binds CameraX Preview and ImageCapture, without live ImageAnalysis. PhotoSession is retained by ViewModel across configuration changes and owns a serial processing executor. Each JPEG/import copy stays in a private per-session cache directory. ImageDecoder applies EXIF orientation, software allocation and sRGB; source decode caps the long edge at 4096, review at 2048. The review view maps both image and hints through the same pan/zoom transform. Native full-resolution work is bounded to one photo plus one section at a time.
+
+StillPlan covers the source with 30%-overlapping sections, at least 2×3 or 3×2 for ordinary photos. Each section gets a 960-pixel detector pass at 90° and upright orientation. The still reader visits all accepted regions (up to 96 per section) without the live latency budget, publishes partial hints and percent/phase updates, and merges overlapping hints for the same wanted ID. Percent measures sections and recognised regions, not a remaining-time estimate. Results bypass the motion/texture tracking gate.
+
+The queue holds at most eight reservations, including in-flight captures/imports. UI state and listeners belong to the main thread. Worker callbacks carry a volatile epoch checked again on the main thread; Stop/Clear/close invalidate old results. Stop preserves partial hints and resume requeues cancelled photos. Cleanup waits behind native work on ViewModel clear. The application removes orphan session folders once per process start. Captures finishing after Clear/close are discarded. No user media or recognised text is published.

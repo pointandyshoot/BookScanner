@@ -72,8 +72,43 @@ final class OcrReader implements AutoCloseable {
     List<LiveTracker.Detection> readAtAngle(Bitmap source,Rect region,float angle,float scale,List<WantedBook> books) throws Exception {
         initialise();try(ReadingImage input=new ReadingImage(source,region,angle,scale)){return readRegions(input,books,()->true,hits->{},0,"test fast",false);}
     }
+    static final class StillProgress {
+        final int percent;final String stage;
+        StillProgress(int percent,String stage){this.percent=percent;this.stage=stage;}
+    }
+    void readStill(Bitmap source,List<WantedBook> books,BooleanSupplier valid,
+                   Consumer<StillProgress> progress,Consumer<List<LiveTracker.Detection>> publish) throws Exception {
+        initialise();List<int[]> sections=StillPlan.sections(source.getWidth(),source.getHeight());
+        List<LiveTracker.Detection> all=new ArrayList<>();int total=sections.size()*2;
+        for(int orientation=0;orientation<2&&valid.getAsBoolean();orientation++){
+            for(int i=0;i<sections.size()&&valid.getAsBoolean();i++){
+                int section=orientation*sections.size()+i;int[] b=sections.get(i);
+                progress.accept(new StillProgress(Math.round(100f*section/total),"Finding text · section "+(section+1)+" / "+total));
+                if(!valid.getAsBoolean())break;
+                try(ReadingImage input=new ReadingImage(source,new Rect(b[0],b[1],b[2],b[3]),orientation==0?90:0,1)){
+                    readRegions(input,books,valid,hits->{
+                        for(LiveTracker.Detection hit:hits){
+                            int duplicate=-1;
+                            for(int k=0;k<all.size();k++)if(all.get(k).id.equals(hit.id)&&Geometry.overlap(LiveTracker.bounds(all.get(k).quad),LiveTracker.bounds(hit.quad))>.15){duplicate=k;break;}
+                            if(duplicate<0){if(all.size()<200)all.add(hit);}
+                            else if(hit.strong&&!all.get(duplicate).strong)all.set(duplicate,hit);
+                        }
+                        if(valid.getAsBoolean())publish.accept(List.copyOf(all));
+                    },0,"still",true,true,(done,count)->progress.accept(new StillProgress(
+                            Math.min(99,Math.round(100f*(section+(count==0?1:done/(float)count))/total)),
+                            "Reading text · section "+(section+1)+" / "+total+" · "+done+" / "+count)));
+                }
+            }
+        }
+        if(valid.getAsBoolean()){progress.accept(new StillProgress(100,"Complete"));publish.accept(List.copyOf(all));}
+    }
     private List<LiveTracker.Detection> readRegions(ReadingImage input,List<WantedBook> books,BooleanSupplier valid,
                                                    Consumer<List<LiveTracker.Detection>> publish,int offset,String scope,boolean detail){
+        return readRegions(input,books,valid,publish,offset,scope,detail,false,(done,count)->{});
+    }
+    private List<LiveTracker.Detection> readRegions(ReadingImage input,List<WantedBook> books,BooleanSupplier valid,
+            Consumer<List<LiveTracker.Detection>> publish,int offset,String scope,boolean detail,boolean thorough,
+            BiConsumer<Integer,Integer> progress){
         int edge=detail?960:768;float scale=Math.min(1,(float)edge/Math.max(input.bitmap.getWidth(),input.bitmap.getHeight()));
         int dw=Math.max(32,Math.round(input.bitmap.getWidth()*scale/32)*32),dh=Math.max(32,Math.round(input.bitmap.getHeight()*scale/32)*32);
         long started=SystemClock.elapsedRealtime();List<float[]> regions=detect(input.bitmap,dw,dh);
@@ -82,14 +117,14 @@ final class OcrReader implements AutoCloseable {
         int visited=0,readable=0;
         if(regions.isEmpty()){
             lastStats=new Stats(0,0,0,0,detectorDone-started,detectorDone-started,scope,dw,dh,runtime);
-            if(valid.getAsBoolean())publish.accept(List.of());
+            if(valid.getAsBoolean()){publish.accept(List.of());progress.accept(0,0);}
             return hits;
         }
         // Fast passes rotate through large legible lines, not tiny publisher glyphs.
-        int pool=detail?regions.size():Math.min(16,regions.size()),start=(offset*5)%pool;
-        for(int i=0;i<Math.min(detail?24:12,pool)&&valid.getAsBoolean();i++){
+        int pool=detail?regions.size():Math.min(16,regions.size()),start=thorough?0:(offset*5)%pool;
+        for(int i=0;i<Math.min(thorough?pool:detail?24:12,pool)&&valid.getAsBoolean();i++){
             // A slow detector must not consume the entire recognition budget.
-            if(i>=(detail?4:2)&&SystemClock.elapsedRealtime()-detectorDone>(detail?800:400))break;
+            if(!thorough&&i>=(detail?4:2)&&SystemClock.elapsedRealtime()-detectorDone>(detail?800:400))break;
             visited++;
             float[] q=regions.get((start+i)%pool);Bitmap crop=rectify(input.bitmap,q);
             try{
@@ -112,7 +147,7 @@ final class OcrReader implements AutoCloseable {
                 }
                 clues.add(new TextClue(chosen.text,mapped));
                 for(Matcher.Match match:matches){
-                    if(hits.size()>=20)break;
+                    if(hits.size()>=(thorough?200:20))break;
                     boolean strong=match.strong;
                     LiveTracker.Detection d=new LiveTracker.Detection(match.book.id,match.book.label(),match.reason,mapped,strong);
                     int duplicate=-1;
@@ -120,7 +155,7 @@ final class OcrReader implements AutoCloseable {
                     if(duplicate<0)hits.add(d);else if(strong&&!hits.get(duplicate).strong)hits.set(duplicate,d);
                 }
                 if(!hits.isEmpty()&&valid.getAsBoolean())publish.accept(List.copyOf(hits));
-            }finally{crop.recycle();}
+            }finally{crop.recycle();if(valid.getAsBoolean())progress.accept(visited,pool);}
         }
         lastStats=new Stats(regions.size(),visited,readable,hits.size(),
                 detectorDone-started,SystemClock.elapsedRealtime()-started,scope,dw,dh,runtime);
