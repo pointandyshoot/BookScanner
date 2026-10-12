@@ -13,6 +13,11 @@ final class PhotoReviewView extends View {
     private final Paint paint=new Paint(Paint.ANTI_ALIAS_FLAG|Paint.FILTER_BITMAP_FLAG);
     private float zoom=1,panX,panY;
     private LiveTracker.Detection selectedHint;
+    private List<int[]> completed=List.of();private boolean analysing;
+    private final ColorMatrixColorFilter grey;
+    {ColorMatrix matrix=new ColorMatrix();matrix.setSaturation(0);grey=new ColorMatrixColorFilter(matrix);}
+    void progress(List<int[]> sections,boolean running){completed=List.copyOf(sections);analysing=running;invalidate();}
+    static int hintColour(LiveTracker.Detection hit){return hit.strong?Color.rgb(67,220,118):Color.rgb(255,160,48);}
     private final ScaleGestureDetector scaling;
     private final GestureDetector gestures;
     PhotoReviewView(Context context){
@@ -36,8 +41,15 @@ final class PhotoReviewView extends View {
         Bitmap old=bitmap;bitmap=value;sourceWidth=Math.max(1,width);sourceHeight=Math.max(1,height);reset();
         if(old!=null&&old!=value)old.recycle();
     }
-    void hints(List<LiveTracker.Detection> value,int width,int height){hits=List.copyOf(value);if(width>0&&height>0){sourceWidth=width;sourceHeight=height;}invalidate();}
-    void clear(){photo(null,1,1);hits=List.of();}
+    void hints(List<LiveTracker.Detection> value,int width,int height){hits=List.copyOf(value);
+        if(selectedHint!=null&&!hits.contains(selectedHint)){
+            LiveTracker.Detection replacement=null;
+            for(var hit:hits)if(hit.id.equals(selectedHint.id)&&au.id.pointandyshoot.bookscanner.core.Geometry.overlap(
+                    LiveTracker.bounds(hit.quad),LiveTracker.bounds(selectedHint.quad))>.15){replacement=hit;break;}
+            selectedHint=replacement;
+        }
+        if(width>0&&height>0){sourceWidth=width;sourceHeight=height;}invalidate();}
+    void clear(){photo(null,1,1);hits=List.of();completed=List.of();analysing=false;}
     private void reset(){zoom=1;panX=panY=0;selectedHint=null;invalidate();}
     void focus(LiveTracker.Detection hit){
         if(bitmap==null)return;float[] b=LiveTracker.bounds(hit.quad);
@@ -55,17 +67,23 @@ final class PhotoReviewView extends View {
         float fit=Math.min(getWidth()/(float)sourceWidth,getHeight()/(float)sourceHeight),scale=fit*zoom;
         float dx=getWidth()/2f+panX-sourceWidth*scale/2,dy=getHeight()/2f+panY-sourceHeight*scale/2;
         paint.setStyle(Paint.Style.FILL);paint.setColor(Color.WHITE);
-        canvas.drawBitmap(bitmap,null,new RectF(dx,dy,dx+sourceWidth*scale,dy+sourceHeight*scale),paint);
+        RectF destination=new RectF(dx,dy,dx+sourceWidth*scale,dy+sourceHeight*scale);
+        paint.setColorFilter(analysing?grey:null);canvas.drawBitmap(bitmap,null,destination,paint);paint.setColorFilter(null);
+        if(analysing&&!completed.isEmpty()){
+            Path analysed=new Path();
+            for(int[] b:completed)analysed.addRect(dx+b[0]*scale,dy+b[1]*scale,dx+b[2]*scale,dy+b[3]*scale,Path.Direction.CW);
+            canvas.save();canvas.clipPath(analysed);canvas.drawBitmap(bitmap,null,destination,paint);canvas.restore();
+        }
         float density=getResources().getDisplayMetrics().density;
         for(int index=0;index<hits.size();index++){
             LiveTracker.Detection hit=hits.get(index);
             float[] b=LiveTracker.bounds(hit.quad);if(dx+b[2]*scale<0||dx+b[0]*scale>getWidth()||dy+b[3]*scale<0||dy+b[1]*scale>getHeight())continue;
-            paint.setStyle(Paint.Style.FILL);paint.setTextSize(13*density);String label=hit==selectedHint?hit.label+(hit.reason.contains("check title")?" · check title":" · possible"):Integer.toString(index+1);
+            paint.setStyle(Paint.Style.FILL);paint.setTextSize(13*density);String label=hit==selectedHint?hit.label+(hit.strong?" · confirmed":hit.reason.contains("check title")?" · check title":" · possible"):Integer.toString(index+1);
             while(label.length()>3&&paint.measureText(label)>getWidth()-20*density)label=label.substring(0,label.length()-2)+"…";
             float x=Math.max(8*density,Math.min(dx+b[0]*scale,getWidth()-paint.measureText(label)-8*density));
             float y=Math.max(22*density,Math.min(getHeight()-6*density,dy+b[1]*scale-6*density));
             paint.setColor(Color.argb(230,17,25,22));canvas.drawRect(x-3*density,y-17*density,x+paint.measureText(label)+3*density,y+5*density,paint);
-            paint.setColor(Color.rgb(255,160,48));canvas.drawText(label,x,y,paint);
+            paint.setColor(hintColour(hit));canvas.drawText(label,x,y,paint);
         }
         // Draw outlines after every label so a label cannot hide a neighbouring match.
         for(LiveTracker.Detection hit:hits){
@@ -74,9 +92,9 @@ final class PhotoReviewView extends View {
             if(box.right<0||box.left>getWidth()||box.bottom<0||box.top>getHeight())continue;
             if(box.width()<12*density)box.inset(-(12*density-box.width())/2,0);
             if(box.height()<12*density)box.inset(0,-(12*density-box.height())/2);
-            if(hit==selectedHint){paint.setStyle(Paint.Style.FILL);paint.setColor(Color.argb(45,255,160,48));canvas.drawRect(box,paint);}
+            if(hit==selectedHint){paint.setStyle(Paint.Style.FILL);paint.setColor((hintColour(hit)&0x00ffffff)|(45<<24));canvas.drawRect(box,paint);}
             paint.setStyle(Paint.Style.STROKE);paint.setStrokeWidth((hit==selectedHint?7:6)*density);paint.setColor(Color.rgb(12,18,15));canvas.drawRect(box,paint);
-            paint.setStrokeWidth((hit==selectedHint?4:3)*density);paint.setColor(Color.rgb(255,160,48));canvas.drawRect(box,paint);
+            paint.setStrokeWidth((hit==selectedHint?4:3)*density);paint.setColor(hintColour(hit));canvas.drawRect(box,paint);
         }
     }
 }

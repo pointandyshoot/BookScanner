@@ -20,7 +20,7 @@ public final class PhotoSession extends AndroidViewModel {
     static final class Shot {
         final File file;final String name;
         State state=State.CAPTURING;int percent,width,height;String stage="Capturing";
-        List<LiveTracker.Detection> hits=List.of();
+        List<LiveTracker.Detection> hits=List.of();List<int[]> completed=List.of();
         Shot(File file,String name){this.file=file;this.name=name;}
     }
     final List<Shot> shots=new ArrayList<>();
@@ -92,7 +92,7 @@ public final class PhotoSession extends AndroidViewModel {
                 reader.readStill(bitmap,wanted,()->valid(token),progress->{
                     long now=android.os.SystemClock.elapsedRealtime();
                     if(now-last[0]<100&&progress.percent!=100)return;last[0]=now;
-                    post(token,()->{shot.percent=progress.percent;shot.stage=progress.stage;changed();});
+                    post(token,()->{shot.percent=progress.percent;shot.stage=progress.stage;shot.completed=progress.completed;changed();});
                 },hits->post(token,()->{shot.hits=hits;changed();}));
                 post(token,()->{shot.state=State.DONE;shot.percent=100;shot.stage=shot.hits.isEmpty()?"Complete · no hints":"Complete · "+shot.hits.size()+" hints";changed();});
             }catch(Exception|LinkageError|OutOfMemoryError e){post(token,()->{shot.state=State.FAILED;shot.stage="Read failed. Retry this photo.";changed();});}
@@ -107,12 +107,12 @@ public final class PhotoSession extends AndroidViewModel {
         changed();
     }
     void resumeProcessing(){
-        paused=false;for(Shot shot:shots)if(shot.state==State.CANCELLED){shot.state=State.QUEUED;shot.percent=0;shot.hits=List.of();shot.stage="Waiting";}
+        paused=false;for(Shot shot:shots)if(shot.state==State.CANCELLED){shot.state=State.QUEUED;shot.percent=0;shot.hits=List.of();shot.completed=List.of();shot.stage="Waiting";}
         changed();pump();
     }
     void retry(Shot shot){
         if(shot.state!=State.FAILED)return;
-        shot.state=paused?State.CANCELLED:State.QUEUED;shot.percent=0;shot.hits=List.of();shot.stage="Waiting";changed();pump();
+        shot.state=paused?State.CANCELLED:State.QUEUED;shot.percent=0;shot.hits=List.of();shot.completed=List.of();shot.stage="Waiting";changed();pump();
     }
     void clear(){
         epoch++;paused=false;for(Shot shot:shots)shot.file.delete();shots.clear();changed();

@@ -19,15 +19,15 @@ public class StillOcrTest {
         c.save();c.translate(150,130);c.rotate(90);c.drawText("TERRY PRATCHETT",0,0,p);c.restore();
         c.drawText("STEPHEN KING",550,1280,p);
         List<WantedBook> wanted=List.of(new WantedBook("vertical","*","Terry Pratchett",List.of(),true),new WantedBook("horizontal","*","Stephen King",List.of(),true));
-        int[] last={-1},updates={0};Set<String> found=new HashSet<>();
+        int[] last={-1},updates={0},completed={0};Set<String> found=new HashSet<>();
         try(OcrReader reader=new OcrReader(InstrumentationRegistry.getInstrumentation().getTargetContext().getAssets())){
-            reader.readStill(scene,wanted,()->true,progress->{assertTrue(progress.percent>=last[0]);assertTrue(progress.percent<=100);last[0]=progress.percent;updates[0]++;},hits->{
+            reader.readStill(scene,wanted,()->true,progress->{assertTrue(progress.percent>=last[0]);assertTrue(progress.percent<=100);last[0]=progress.percent;updates[0]++;assertTrue(progress.completed.size()>=completed[0]);completed[0]=progress.completed.size();},hits->{
                 for(var hit:hits){found.add(hit.id);float[] b=LiveTracker.bounds(hit.quad);
                     if(hit.id.equals("vertical")){assertTrue(b[0]<250);assertTrue(b[1]<750);}
                     else {assertTrue(b[0]>500);assertTrue(b[1]>1150);}
                 }
             });
-            assertEquals(100,last[0]);assertTrue(updates[0]>12);assertTrue(found.contains("vertical"));assertTrue(found.contains("horizontal"));
+            assertEquals(StillPlan.sections(1152,1536).size(),completed[0]);assertEquals(100,last[0]);assertTrue(updates[0]>12);assertTrue(found.contains("vertical"));assertTrue(found.contains("horizontal"));
         }finally{scene.recycle();}
     }
     @Test public void cancellingStopsBeforeFurtherSectionReadsAndNeverReportsComplete() throws Exception {

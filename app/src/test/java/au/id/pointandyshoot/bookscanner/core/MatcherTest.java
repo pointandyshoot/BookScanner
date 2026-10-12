@@ -28,4 +28,21 @@ public class MatcherTest {
     @Test public void shortDistinctiveAuthorWordIsEnoughForHint(){assertFalse(matcher.find("BEAR",List.of(book("*","Greg Bear"))).get(0).strong);}
     @Test public void imperfectSurnameIsEnoughForHint(){assertFalse(matcher.find("RElCHS",List.of(book("*","Kathy Reichs"))).get(0).strong);}
     @Test public void printAndEditionAreNotHints(){assertTrue(matcher.find("LARGE PRINT EDITION",List.of(book("The Large Book of Tomorrow",""))).isEmpty());}
+    @Test public void differentJordanAuthorsAreRejected(){
+        var wanted=List.of(book("*","Robert Jordan"));
+        assertTrue(matcher.find("SOPHIE JORDAN",wanted).isEmpty());
+        assertTrue(matcher.find("PENNY JORDAN",wanted).isEmpty());
+        assertTrue(matcher.find("ROBERT LUDLUM",wanted).isEmpty());
+        assertFalse(matcher.find("JORDAN",wanted).get(0).strong);
+        assertTrue(matcher.find("ROBERT JORDAN",wanted).get(0).strong);
+    }
+    @Test public void looseNearWordsDoNotCreateSurnameHints(){
+        assertTrue(matcher.find("GARDEN",List.of(book("*","Robert Jordan"))).isEmpty());
+    }
+    @Test public void isolatedGivenNameSeedsVerificationButFullDifferentAuthorDoesNot(){
+        var wanted=List.of(book("*","Robert Jordan"));
+        assertFalse(matcher.find("ROBERT",wanted).get(0).strong);
+        assertTrue(matcher.find("ROBERT LUDLUM",wanted).isEmpty());
+        assertTrue(matcher.find("ROBERTSON",wanted).isEmpty());
+    }
 }

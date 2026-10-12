@@ -28,4 +28,19 @@ public class PhotoOverlayTest {
             image.recycle();view.clear();
         });
     }
+    @Test public void progressRevealsOnlyCompletedSectionsAndStrongHintsAreGreen(){
+        var instrumentation=InstrumentationRegistry.getInstrumentation();instrumentation.runOnMainSync(()->{
+            var view=new PhotoReviewView(instrumentation.getTargetContext());view.layout(0,0,400,400);
+            Bitmap photo=Bitmap.createBitmap(400,400,Bitmap.Config.ARGB_8888);new Canvas(photo).drawColor(Color.RED);
+            view.photo(photo,400,400);view.progress(List.of(new int[]{0,0,200,400}),true);
+            Bitmap image=Bitmap.createBitmap(400,400,Bitmap.Config.ARGB_8888);view.draw(new Canvas(image));
+            assertEquals(Color.RED,image.getPixel(100,200));
+            int grey=image.getPixel(300,200);assertEquals(Color.red(grey),Color.green(grey));assertEquals(Color.green(grey),Color.blue(grey));
+            var hit=new LiveTracker.Detection("green","Robert Jordan","Author match",new float[]{250,100,350,100,350,300,250,300},true);
+            view.hints(List.of(hit),400,400);view.draw(new Canvas(image));
+            int green=image.getPixel(250,200);assertTrue(Color.green(green)>Color.red(green));
+            view.progress(List.of(),false);view.hints(List.of(),400,400);view.draw(new Canvas(image));assertEquals(Color.RED,image.getPixel(300,200));
+            image.recycle();view.clear();
+        });
+    }
 }

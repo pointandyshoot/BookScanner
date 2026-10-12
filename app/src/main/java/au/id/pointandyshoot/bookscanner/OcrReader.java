@@ -73,19 +73,20 @@ final class OcrReader implements AutoCloseable {
         initialise();try(ReadingImage input=new ReadingImage(source,region,angle,scale)){return readRegions(input,books,()->true,hits->{},0,"test fast",false);}
     }
     static final class StillProgress {
-        final int percent;final String stage;
-        StillProgress(int percent,String stage){this.percent=percent;this.stage=stage;}
+        final int percent;final String stage;final List<int[]> completed;
+        StillProgress(int percent,String stage){this(percent,stage,List.of());}
+        StillProgress(int percent,String stage,List<int[]> completed){this.percent=percent;this.stage=stage;this.completed=List.copyOf(completed);}
     }
     void readStill(Bitmap source,List<WantedBook> books,BooleanSupplier valid,
                    Consumer<StillProgress> progress,Consumer<List<LiveTracker.Detection>> publish) throws Exception {
         initialise();List<int[]> sections=StillPlan.sections(source.getWidth(),source.getHeight());
-        List<LiveTracker.Detection> all=new ArrayList<>();int total=sections.size()*2;
-        for(int orientation=0;orientation<2&&valid.getAsBoolean();orientation++){
-            for(int i=0;i<sections.size()&&valid.getAsBoolean();i++){
-                int section=orientation*sections.size()+i;int[] b=sections.get(i);
-                progress.accept(new StillProgress(Math.round(100f*section/total),"Finding text · section "+(section+1)+" / "+total));
+        List<LiveTracker.Detection> all=new ArrayList<>();List<int[]> completed=new ArrayList<>();int total=sections.size()*2;
+        for(int i=0;i<sections.size()&&valid.getAsBoolean();i++){
+            for(int orientation=0;orientation<2&&valid.getAsBoolean();orientation++){
+                int section=i*2+orientation;int[] b=sections.get(i);
+                progress.accept(new StillProgress(Math.round(90f*section/total),"Finding text · section "+(section+1)+" / "+total,completed));
                 if(!valid.getAsBoolean())break;
-                try(ReadingImage input=new ReadingImage(source,new Rect(b[0],b[1],b[2],b[3]),orientation==0?90:0,1)){
+                try(ReadingImage input=new ReadingImage(source,new Rect(b[0],b[1],b[2],b[3]),orientation==0?90:0,2)){
                     readRegions(input,books,valid,hits->{
                         for(LiveTracker.Detection hit:hits){
                             int duplicate=-1;
@@ -95,12 +96,48 @@ final class OcrReader implements AutoCloseable {
                         }
                         if(valid.getAsBoolean())publish.accept(List.copyOf(all));
                     },0,"still",true,true,(done,count)->progress.accept(new StillProgress(
-                            Math.min(99,Math.round(100f*(section+(count==0?1:done/(float)count))/total)),
-                            "Reading text · section "+(section+1)+" / "+total+" · "+done+" / "+count)));
+                            Math.min(90,Math.round(90f*(section+(count==0?1:done/(float)count))/total)),
+                            "Reading text · section "+(section+1)+" / "+total+" · "+done+" / "+count,completed)));
+                    if(orientation==1&&valid.getAsBoolean()){
+                        completed.add(b);
+                        progress.accept(new StillProgress(Math.round(90f*(section+1)/total),"Section analysed",completed));
+                    }
                 }
             }
         }
-        if(valid.getAsBoolean()){progress.accept(new StillProgress(100,"Complete"));publish.accept(List.copyOf(all));}
+        // Spend the extra recognition budget only on the areas that produced tentative evidence.
+        List<LiveTracker.Detection> candidates=new ArrayList<>(all);
+        for(int i=0;i<candidates.size()&&valid.getAsBoolean();i++){
+            LiveTracker.Detection candidate=candidates.get(i);if(candidate.strong)continue;
+            progress.accept(new StillProgress(90+Math.round(9f*i/Math.max(1,candidates.size())),
+                    "Checking hint · "+(i+1)+" / "+candidates.size(),completed));
+            float[] bounds=LiveTracker.bounds(candidate.quad);
+            int px=Math.max(20,Math.round((bounds[2]-bounds[0])*.45f));
+            int py=Math.max(20,Math.round((bounds[3]-bounds[1])*.45f));
+            Rect area=new Rect(Math.max(0,(int)bounds[0]-px),Math.max(0,(int)bounds[1]-py),
+                    Math.min(source.getWidth(),(int)Math.ceil(bounds[2])+px),Math.min(source.getHeight(),(int)Math.ceil(bounds[3])+py));
+            if(area.isEmpty())continue;
+            List<WantedBook> target=new ArrayList<>();for(WantedBook book:books)if(book.id.equals(candidate.id))target.add(book);
+            boolean promoted=false;List<TextClue> evidence=new ArrayList<>();
+            for(int angle:new int[]{90,0}){
+                if(!valid.getAsBoolean()||promoted)break;
+                try(ReadingImage input=new ReadingImage(source,area,angle,2)){
+                    List<LiveTracker.Detection> checked=readRegions(input,target,valid,hits->{},0,"verify",true,true,(done,count)->{},evidence::add);
+                    for(LiveTracker.Detection hit:checked)if(hit.strong&&Geometry.overlap(bounds,LiveTracker.bounds(hit.quad))>.15){
+                        int index=all.indexOf(candidate);if(index>=0)all.set(index,new LiveTracker.Detection(hit.id,hit.label,
+                                "Verified · "+hit.reason,hit.quad,true));promoted=true;break;
+                    }
+                }
+            }
+            boolean contradicted=false;
+            for(TextClue clue:evidence)if(clue.confidence>=.85&&Geometry.overlap(bounds,LiveTracker.bounds(clue.quad))>.3)
+                for(WantedBook book:target)if(Matcher.conflictingAuthor(book.author,Matcher.normalise(clue.text)))contradicted=true;
+            if(!promoted&&(contradicted||candidate.reason.startsWith("Given name")))all.remove(candidate);
+            else if(!promoted){int index=all.indexOf(candidate);if(index>=0)all.set(index,new LiveTracker.Detection(candidate.id,candidate.label,
+                    candidate.reason+" · reread inconclusive",candidate.quad,false));}
+            if(valid.getAsBoolean())publish.accept(List.copyOf(all));
+        }
+        if(valid.getAsBoolean()){progress.accept(new StillProgress(100,"Complete",completed));publish.accept(List.copyOf(all));}
     }
     private List<LiveTracker.Detection> readRegions(ReadingImage input,List<WantedBook> books,BooleanSupplier valid,
                                                    Consumer<List<LiveTracker.Detection>> publish,int offset,String scope,boolean detail){
@@ -109,6 +146,11 @@ final class OcrReader implements AutoCloseable {
     private List<LiveTracker.Detection> readRegions(ReadingImage input,List<WantedBook> books,BooleanSupplier valid,
             Consumer<List<LiveTracker.Detection>> publish,int offset,String scope,boolean detail,boolean thorough,
             BiConsumer<Integer,Integer> progress){
+        return readRegions(input,books,valid,publish,offset,scope,detail,thorough,progress,clue->{});
+    }
+    private List<LiveTracker.Detection> readRegions(ReadingImage input,List<WantedBook> books,BooleanSupplier valid,
+            Consumer<List<LiveTracker.Detection>> publish,int offset,String scope,boolean detail,boolean thorough,
+            BiConsumer<Integer,Integer> progress,Consumer<TextClue> evidence){
         int edge=detail?960:768;float scale=Math.min(1,(float)edge/Math.max(input.bitmap.getWidth(),input.bitmap.getHeight()));
         int dw=Math.max(32,Math.round(input.bitmap.getWidth()*scale/32)*32),dh=Math.max(32,Math.round(input.bitmap.getHeight()*scale/32)*32);
         long started=SystemClock.elapsedRealtime();List<float[]> regions=detect(input.bitmap,dw,dh);
@@ -145,10 +187,17 @@ final class OcrReader implements AutoCloseable {
                     mergeMatches(matches,matcher.find(clue.text+" "+chosen.text,books));
                     mergeMatches(matches,matcher.find(chosen.text+" "+clue.text,books));
                 }
-                clues.add(new TextClue(chosen.text,mapped));
+                TextClue reading=new TextClue(chosen.text,mapped,chosen.confidence);clues.add(reading);evidence.accept(reading);
                 for(Matcher.Match match:matches){
                     if(hits.size()>=(thorough?200:20))break;
-                    boolean strong=match.strong;
+                    boolean strong=match.strong&&chosen.confidence>=.85;
+                    if(strong&&matcher.find(chosen.text,books).stream().noneMatch(m->m.book.id.equals(match.book.id)&&m.strong)){
+                        strong=false;
+                        for(TextClue clue:clues)if(clue.confidence>=.85&&TextNeighbour.canJoin(clue.quad,mapped)){
+                            if(matcher.find(clue.text+" "+chosen.text,books).stream().anyMatch(m->m.book.id.equals(match.book.id)&&m.strong)
+                                    ||matcher.find(chosen.text+" "+clue.text,books).stream().anyMatch(m->m.book.id.equals(match.book.id)&&m.strong)){strong=true;break;}
+                        }
+                    }
                     LiveTracker.Detection d=new LiveTracker.Detection(match.book.id,match.book.label(),match.reason,mapped,strong);
                     int duplicate=-1;
                     for(int k=0;k<hits.size();k++)if(hits.get(k).id.equals(d.id)&&Geometry.overlap(LiveTracker.bounds(mapped),LiveTracker.bounds(hits.get(k).quad))>.3){duplicate=k;break;}
@@ -162,8 +211,8 @@ final class OcrReader implements AutoCloseable {
         if(valid.getAsBoolean())publish.accept(List.copyOf(hits));return hits;
     }
     private static final class TextClue {
-        final String text;final float[] quad;
-        TextClue(String text,float[] quad){this.text=text;this.quad=quad;}
+        final String text;final float[] quad;final float confidence;
+        TextClue(String text,float[] quad,float confidence){this.text=text;this.quad=quad;this.confidence=confidence;}
     }
     private static void mergeMatches(List<Matcher.Match> into,List<Matcher.Match> extra){
         for(Matcher.Match m:extra){
