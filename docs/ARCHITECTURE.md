@@ -14,7 +14,7 @@ Late OCR results can use up to eight seconds of bounded motion history. A curren
 
 ## Immediate hints
 
-One orange box means a possible match for the user to inspect. There is no multi-frame confirmation state. Exact distinctive four-letter words, fuzzy five-letter-or-longer fragments and whole-name/title similarity can create hints. Common publishing words are excluded from fragment matching and short titles require exact whole words. Author clues for a specific title are labelled “check title”. Internal strong evidence only prefers a more complete label; it never controls visibility or colour.
+One orange box means a possible match for the user to inspect. There is no multi-frame confirmation state. Exact distinctive four-letter words, fuzzy five-letter-or-longer fragments and whole-name/title similarity can create hints. Common publishing words are excluded from fragment matching and short titles require exact whole words. Author clues for a specific title are labelled “check title”. In live mode, strong evidence prefers a more complete label. Photo review uses green for full title/author evidence with OCR confidence at least 0.85 and performs a focused 2× crop reread of tentative candidates; clearly conflicting author evidence can dismiss them. Spatial section completion drives the greyscale-to-colour review map.
 
 Nearby similarly oriented lines can be paired within one OCR pass. Geometric checks limit centre displacement, angle and height mismatch. Paired evidence stays anchored to the current text region rather than inventing a whole-book boundary. It is a heuristic and may join neighbouring spines; the user has chosen higher recall with more false positives.
 

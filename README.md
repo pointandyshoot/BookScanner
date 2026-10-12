@@ -2,14 +2,14 @@
 
 An offline Android wanted-book finder for op shops. Sweep the camera across a shelf; potential matches get a box in the live view. Built with PP-OCRv4 Mobile, NCNN, CameraX and OpenCV, with the Pixel 10 as the first testing target.
 
-**Version 0.5.1 — real-shelf accuracy and Pixel 10 performance still need device testing.** A box is a prompt to check a book yourself, not a confirmed identification.
+**Version 0.6.0 — real-shelf accuracy and Pixel 10 performance still need device testing.** A box is a prompt to check a book yourself, not a confirmed identification.
 
 ## Using the app
 
 1. Open **Wanted → Add**. Enter a title and optionally its author, or leave the title blank for **any book by that author**.
 2. Add alternative titles in the aliases field. Title patterns support `*` (any text) and `?` (one character). For example, `Matilda*` matches visible title text starting with “Matilda”. The app cannot infer series membership when a series name is absent from the spine.
 3. Return to **Scan**, allow the camera and sweep slowly. Tap the camera view to focus; use the torch or zoom if needed.
-4. **Orange** boxes are immediate hints: a partial title, surname or imperfect reading can highlight a book. There is no confirmation wait or green state. Check the physical book yourself; more false positives are intentional. “Check title” means an author clue for a specific wanted title.
+4. **Orange** boxes are immediate hints: a partial title, surname or imperfect reading can highlight a book. Live hints appear without a confirmation wait. Photo review also uses green for strong full-name/title evidence and runs a closer check of orange candidates. Check the physical book yourself; more false positives are intentional. “Check title” means an author clue for a specific wanted title.
 5. A gentle tick announces a new detection; turn it off in **Options** if preferred. Use **Pause** to pause recognition. The camera preview remains live; leaving the app or opening the wanted list releases the camera.
 
 Keep text reasonably large in the view. Glare, ornate lettering, tightly stacked characters and fast movement can prevent recognition. Try a few books at a time. Live scanning keeps no photos or history. Shelf photos keeps a temporary batch until you clear it or leave that screen. Outlines follow the detected text, not a guaranteed segmentation of the entire book.
@@ -18,7 +18,7 @@ Wanted entries can be edited, disabled and deleted. **Import/Export** uses the A
 
 ## Upgrading from an earlier version
 
-**Export your wanted list before replacing the installed APK.** GitHub builds currently use per-run debug keys, so Android may require uninstalling the old app before installing the new one. Reimport your exported JSON afterwards. Version 0.5.1 keeps the same list format. Builds from the same Android Studio installation normally share its local debug key.
+**Export your wanted list before replacing the installed APK.** GitHub builds currently use per-run debug keys, so Android may require uninstalling the old app before installing the new one. Reimport your exported JSON afterwards. Version 0.6.0 keeps the same list format. Builds from the same Android Studio installation normally share its local debug key.
 
 ## Install and build
 
@@ -45,6 +45,12 @@ Windows: use `gradlew.bat`. The Gradle 8.13 wrapper is included; Android Gradle 
 
 [Android build](https://github.com/pointandyshoot/BookScanner/actions/workflows/android.yml) tests, lints and builds the app on pushes and pull requests. Open a successful run and download **BookScanner-debug** under Artifacts, unzip it, then install `app-arm64-v8a-debug.apk` on the phone. GitHub sign-in is needed to download workflow artifacts. Android may ask you to allow installation from the app opening the APK. Each clean CI runner uses a new debug signing key; uninstall an older differently signed build before installing (export your wanted list first), or build consistently with Android Studio on your own computer.
 
+## Version 0.6.0: closer checks and photo navigation
+
+- Orange photo candidates receive a focused crop reread. Green means a full title or wildcard author match with reliable OCR; author-only evidence for a specific wanted title remains orange. Clearly incompatible author readings can dismiss a hint. An isolated given name seeds verification but is discarded if that check cannot establish the requested identity.
+- **‹ Hint / Hint ›** cycle through hints on the current photo and wrap at the ends. **Photos / hints → Change photo** selects another image.
+- During photo review, unanalysed sections are greyscale. Each section regains colour after both discovery orientations finish; the final Checking hint stage reports the focused verification work.
+
 ## Version 0.5.1: clearer discovery locations
 
 - Photo review uses contrasting rectangular outlines around matched text, with a minimum visible size for small clues. Outlines draw after labels so labels cannot cover them. Numbered badges keep the overview readable; the Hints list uses the same numbers. Selecting a discovery fits the full text region into view and marks it more strongly, with its full label.
@@ -55,7 +61,7 @@ Windows: use `gradlew.bat`. The Gradle 8.13 wrapper is included; Android Gradle 
 
 - Tap **Photos** from the live screen. **Capture** takes one quality JPEG; **Burst (3)** takes three spaced shots as you pan, with about 0.9 seconds between completed captures. Actual camera latency is additional. **Stop burst** stops additional shots.
 - **Import** selects existing photos with the Android document picker, including shelf photos taken earlier. No broad media-library permission is needed.
-- Up to eight photos per temporary batch. Each is processed sequentially using overlapping sections, 90° then upright detection and all accepted regions in each section. Original photo coordinates drive the static orange highlights; there is no live tracking gate or live recognition time budget.
+- Up to eight photos per temporary batch. Each is processed sequentially using overlapping sections, 90° then upright detection and all accepted regions in each section. Original photo coordinates drive the static orange/green highlights; there is no live tracking gate or live recognition time budget.
 - Batch and current-photo meters show processing progress. Hints arrive progressively. **Review**, **Previous**, **Next**, pinch/drag and double-tap reset let you inspect the photo. Tap **Hints** to focus on a discovery. You can review one photo while another processes.
 - **Stop reads** retains partial hints; **Resume reads** restarts unfinished photos. Failed reads can be retried through the hints button. **Clear** deletes the temporary batch. Leaving the photo screen asks before discarding the batch.
 - Screen rotation retains the queue and progress. A killed process does not resume its batch; orphaned captures are deleted at the next application start.
