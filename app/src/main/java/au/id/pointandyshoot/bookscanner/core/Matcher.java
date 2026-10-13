@@ -25,10 +25,15 @@ public final class Matcher {
         for (WantedBook b : books) {
             if (!b.enabled) continue;
             double author=b.author.isBlank()?0:similarity(b.author,observed);
-            double partialAuthor=b.author.isBlank()?0:partial(b.author,observed);
+            String[] authorWords=normalise(b.author).split(" ");
+            double partialAuthor=b.author.isBlank()?0:partial(authorWords[authorWords.length-1],observed);
+            // A bare substantial given name can seed a local reread of a split author name.
+            boolean givenNameOnly=authorWords.length>1&&authorWords[0].length()>=5&&observed.equals(authorWords[0]);
+            if(givenNameOnly)partialAuthor=Math.max(partialAuthor,.62);
+            if(conflictingAuthor(b.author,observed)){author=0;partialAuthor=0;}
             if(b.title.equals("*")) {
                 if(author>=.90)found.add(new Match(b,author,"Author match",true));
-                else if(author>=.60||partialAuthor>0)found.add(new Match(b,Math.max(author,partialAuthor),"Possible author",false));
+                else if(author>=.80||partialAuthor>0)found.add(new Match(b,Math.max(author,partialAuthor),givenNameOnly?"Given name — checking author":"Possible author",false));
                 continue;
             }
             double title=similarity(b.title,observed),partialTitle=partial(b.title,observed);
@@ -36,10 +41,16 @@ public final class Matcher {
             if(title>=.88)found.add(new Match(b,title,"Title match",true));
             else if(title>=.60||partialTitle>0)found.add(new Match(b,Math.max(title,partialTitle),"Possible title",false));
             else if(author>=.90)found.add(new Match(b,.70,"Author only — check title",false));
-            else if(author>=.60||partialAuthor>0)found.add(new Match(b,.60,"Possible author — check title",false));
+            else if(author>=.80||partialAuthor>0)found.add(new Match(b,.60,givenNameOnly?"Given name — checking author and title":"Possible author — check title",false));
         }
         found.sort(Comparator.comparingDouble((Match m) -> m.score).reversed());
         return found;
+    }
+    /** A compact two-word author line with a different given name is negative evidence. */
+    public static boolean conflictingAuthor(String target,String observed){
+        String[] expected=normalise(target).split(" "),actual=observed.split(" ");
+        if(expected.length!=2||actual.length!=2||!expected[1].equals(actual[1])||COMMON.contains(actual[0]))return false;
+        return 1.0-(double)distance(expected[0],actual[0])/Math.max(expected[0].length(),actual[0].length())<.70;
     }
     private static final Set<String> COMMON=Set.of("the","and","with","from","this","that","book","books","novel","series","volume","author","bestseller","bestselling","large","print","edition","international","million","copy","copies","fiction","story");
     /** Substantial distinctive fragments are clues, not confirmed identities. */
@@ -51,7 +62,7 @@ public final class Matcher {
                 if(token.equals(word))return .70;
                 // Five-letter fragments and single OCR errors are useful shelf hints.
                 if(Math.min(token.length(),word.length())>=5 &&
-                        1.0-(double)distance(token,word)/Math.max(token.length(),word.length())>=.70)return .62;
+                        1.0-(double)distance(token,word)/Math.max(token.length(),word.length())>=.80)return .62;
             }
         }
         return 0;

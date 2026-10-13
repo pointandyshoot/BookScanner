@@ -19,15 +19,15 @@ public class StillOcrTest {
         c.save();c.translate(150,130);c.rotate(90);c.drawText("TERRY PRATCHETT",0,0,p);c.restore();
         c.drawText("STEPHEN KING",550,1280,p);
         List<WantedBook> wanted=List.of(new WantedBook("vertical","*","Terry Pratchett",List.of(),true),new WantedBook("horizontal","*","Stephen King",List.of(),true));
-        int[] last={-1},updates={0};Set<String> found=new HashSet<>();
+        int[] last={-1},updates={0},completed={0};Set<String> found=new HashSet<>();
         try(OcrReader reader=new OcrReader(InstrumentationRegistry.getInstrumentation().getTargetContext().getAssets())){
-            reader.readStill(scene,wanted,()->true,progress->{assertTrue(progress.percent>=last[0]);assertTrue(progress.percent<=100);last[0]=progress.percent;updates[0]++;},hits->{
+            reader.readStill(scene,wanted,()->true,progress->{assertTrue(progress.percent>=last[0]);assertTrue(progress.percent<=100);last[0]=progress.percent;updates[0]++;assertTrue(progress.completed.size()>=completed[0]);completed[0]=progress.completed.size();},hits->{
                 for(var hit:hits){found.add(hit.id);float[] b=LiveTracker.bounds(hit.quad);
                     if(hit.id.equals("vertical")){assertTrue(b[0]<250);assertTrue(b[1]<750);}
                     else {assertTrue(b[0]>500);assertTrue(b[1]>1150);}
                 }
             });
-            assertEquals(100,last[0]);assertTrue(updates[0]>12);assertTrue(found.contains("vertical"));assertTrue(found.contains("horizontal"));
+            assertEquals(StillPlan.sections(1152,1536).size(),completed[0]);assertEquals(100,last[0]);assertTrue(updates[0]>12);assertTrue(found.contains("vertical"));assertTrue(found.contains("horizontal"));
         }finally{scene.recycle();}
     }
     @Test public void cancellingStopsBeforeFurtherSectionReadsAndNeverReportsComplete() throws Exception {
@@ -47,5 +47,19 @@ public class StillOcrTest {
         exif.setAttribute(android.media.ExifInterface.TAG_ORIENTATION,"6");exif.saveAttributes();
         try {Bitmap decoded=PhotoSession.decode(file,400);assertEquals(250,decoded.getWidth());assertEquals(400,decoded.getHeight());assertEquals(Bitmap.Config.ARGB_8888,decoded.getConfig());decoded.recycle();}
         finally{file.delete();}
+    }
+    @Test public void splitAuthorVerificationDistinguishesOtherJordanAuthors() throws Exception {
+        assertTrue(NativeVision.initialise());
+        Bitmap scene=Bitmap.createBitmap(1152,1536,Bitmap.Config.ARGB_8888);Canvas c=new Canvas(scene);c.drawColor(Color.WHITE);
+        Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(Color.BLACK);p.setTypeface(Typeface.create("sans-serif",Typeface.BOLD));p.setTextSize(35);
+        c.drawText("ROBERT",150,220,p);c.drawText("JORDAN",150,260,p);
+        c.drawText("SOPHIE",650,720,p);c.drawText("JORDAN",650,760,p);
+        List<WantedBook> wanted=List.of(new WantedBook("jordan","*","Robert Jordan",List.of(),true));
+        java.util.concurrent.atomic.AtomicReference<List<LiveTracker.Detection>> finalHits=new java.util.concurrent.atomic.AtomicReference<>(List.of());
+        try(OcrReader reader=new OcrReader(InstrumentationRegistry.getInstrumentation().getTargetContext().getAssets())){
+            reader.readStill(scene,wanted,()->true,progress->{},finalHits::set);
+            assertTrue("Target full name should be green",finalHits.get().stream().anyMatch(hit->hit.strong&&LiveTracker.bounds(hit.quad)[0]<400));
+            assertFalse("Different split author should be dismissed",finalHits.get().stream().anyMatch(hit->LiveTracker.bounds(hit.quad)[0]>500));
+        }finally{scene.recycle();}
     }
 }

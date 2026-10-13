@@ -38,3 +38,13 @@ On Pixel: take a portrait and landscape shot; start a three-photo burst while pa
 ## Photo highlights (0.5.1)
 
 Verify Batch hints across several photos, including a first photo without matches. Review should prefer a matching photo. Tap a batch discovery to open its specific photo and focus its orange rectangle. Check outlines on light/dark spines, after zoom, and for small/split text. Automated rendered-pixel checks cover source-to-review scaling and focus; an activity test covers later-photo discovery selection.
+
+## Photo verification (0.6.0)
+
+Matcher regression tests distinguish Robert Jordan from Sophie/Penny Jordan and Robert Ludlum, retain surname-only tentative hints and reject loose garden/Jordan similarity. Rendered-pixel tests check green strong outlines, greyscale unanalysed sections and colour restoration. Still OCR tests check monotonic spatial completion as well as numeric progress.
+
+Photo hints now use green for full title or wildcard-author evidence with OCR confidence at least 0.85. Orange candidates receive a focused 2× crop reread in both orientations after discovery. Reliable conflicting two-word author readings can dismiss a tentative candidate; unreadable crops remain orange. The progress map reports discovery coverage, while the separate Checking hint stage reports verification.
+
+On Pixel, import a shelf with several authors sharing a surname. Check that a surname alone stays orange, a readable full target name becomes green, and a readable different author does not confirm the target. Cycle forward/back through hints on one image, wrap at the ends, change photo through Photos / hints, rotate during analysis, and stop/resume. Measure latency: candidate verification adds work and does not establish improved phone performance.
+
+An isolated substantial given name seeds only the verification pass; if that reread cannot establish the requested identity, this seed is discarded rather than left as an orange result. Split small names are discovered using enlarged section inputs. A private host replay of the supplied shelf found Robert in the top-right section and read both Robert and Jordan at high confidence in the candidate-derived crop. This validates crop selection and model readability, not Android UI execution or Pixel timing.

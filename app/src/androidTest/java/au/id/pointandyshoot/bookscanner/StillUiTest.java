@@ -56,7 +56,14 @@ public class StillUiTest {
                 }
                 second.hits=java.util.List.of(new LiveTracker.Detection("public-review","Example author","author",new float[]{100,150,150,150,150,300,100,300},false));
                 var button=find(activity.getWindow().getDecorView(),"Review");assertNotNull(button);button.performClick();
-                assertNotNull("Review opens the matching second photo",find(activity.getWindow().getDecorView(),"Hints (1)"));
+                assertNotNull("Review opens the matching second photo",find(activity.getWindow().getDecorView(),"Photos / hints"));
+                try{
+                    var selected=StillActivity.class.getDeclaredField("selected");selected.setAccessible(true);assertEquals(1,selected.getInt(activity));
+                    var hint=StillActivity.class.getDeclaredField("selectedHint");hint.setAccessible(true);
+                    var next=find(activity.getWindow().getDecorView(),"Hint ›");assertNotNull(next);next.performClick();assertEquals(0,hint.getInt(activity));
+                    next.performClick();assertEquals("One hint wraps on the same image",0,hint.getInt(activity));assertEquals(1,selected.getInt(activity));
+                    find(activity.getWindow().getDecorView(),"‹ Hint").performClick();assertEquals(0,hint.getInt(activity));
+                }catch(ReflectiveOperationException e){throw new AssertionError(e);}
             });
         }
     }
