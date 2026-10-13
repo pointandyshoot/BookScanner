@@ -48,4 +48,18 @@ public class StillOcrTest {
         try {Bitmap decoded=PhotoSession.decode(file,400);assertEquals(250,decoded.getWidth());assertEquals(400,decoded.getHeight());assertEquals(Bitmap.Config.ARGB_8888,decoded.getConfig());decoded.recycle();}
         finally{file.delete();}
     }
+    @Test public void splitAuthorVerificationDistinguishesOtherJordanAuthors() throws Exception {
+        assertTrue(NativeVision.initialise());
+        Bitmap scene=Bitmap.createBitmap(1152,1536,Bitmap.Config.ARGB_8888);Canvas c=new Canvas(scene);c.drawColor(Color.WHITE);
+        Paint p=new Paint(Paint.ANTI_ALIAS_FLAG);p.setColor(Color.BLACK);p.setTypeface(Typeface.create("sans-serif",Typeface.BOLD));p.setTextSize(35);
+        c.drawText("ROBERT",150,220,p);c.drawText("JORDAN",150,260,p);
+        c.drawText("SOPHIE",650,720,p);c.drawText("JORDAN",650,760,p);
+        List<WantedBook> wanted=List.of(new WantedBook("jordan","*","Robert Jordan",List.of(),true));
+        java.util.concurrent.atomic.AtomicReference<List<LiveTracker.Detection>> finalHits=new java.util.concurrent.atomic.AtomicReference<>(List.of());
+        try(OcrReader reader=new OcrReader(InstrumentationRegistry.getInstrumentation().getTargetContext().getAssets())){
+            reader.readStill(scene,wanted,()->true,progress->{},finalHits::set);
+            assertTrue("Target full name should be green",finalHits.get().stream().anyMatch(hit->hit.strong&&LiveTracker.bounds(hit.quad)[0]<400));
+            assertFalse("Different split author should be dismissed",finalHits.get().stream().anyMatch(hit->LiveTracker.bounds(hit.quad)[0]>500));
+        }finally{scene.recycle();}
+    }
 }

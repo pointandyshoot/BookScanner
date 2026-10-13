@@ -112,8 +112,9 @@ final class OcrReader implements AutoCloseable {
             progress.accept(new StillProgress(90+Math.round(9f*i/Math.max(1,candidates.size())),
                     "Checking hint · "+(i+1)+" / "+candidates.size(),completed));
             float[] bounds=LiveTracker.bounds(candidate.quad);
-            int px=Math.max(20,Math.round((bounds[2]-bounds[0])*.45f));
-            int py=Math.max(20,Math.round((bounds[3]-bounds[1])*.45f));
+            boolean vertical=bounds[3]-bounds[1]>bounds[2]-bounds[0];
+            int px=Math.max(20,Math.round((bounds[2]-bounds[0])*(vertical?1.8f:.45f)));
+            int py=Math.max(20,Math.round((bounds[3]-bounds[1])*(vertical?.45f:1.8f)));
             Rect area=new Rect(Math.max(0,(int)bounds[0]-px),Math.max(0,(int)bounds[1]-py),
                     Math.min(source.getWidth(),(int)Math.ceil(bounds[2])+px),Math.min(source.getHeight(),(int)Math.ceil(bounds[3])+py));
             if(area.isEmpty())continue;
@@ -131,7 +132,13 @@ final class OcrReader implements AutoCloseable {
             }
             boolean contradicted=false;
             for(TextClue clue:evidence)if(clue.confidence>=.85&&Geometry.overlap(bounds,LiveTracker.bounds(clue.quad))>.3)
-                for(WantedBook book:target)if(Matcher.conflictingAuthor(book.author,Matcher.normalise(clue.text)))contradicted=true;
+                for(WantedBook book:target){
+                    if(Matcher.conflictingAuthor(book.author,Matcher.normalise(clue.text)))contradicted=true;
+                    for(TextClue neighbour:evidence)if(neighbour!=clue&&neighbour.confidence>=.85&&TextNeighbour.canJoin(clue.quad,neighbour.quad)){
+                        if(Matcher.conflictingAuthor(book.author,Matcher.normalise(clue.text+" "+neighbour.text))
+                                ||Matcher.conflictingAuthor(book.author,Matcher.normalise(neighbour.text+" "+clue.text)))contradicted=true;
+                    }
+                }
             if(!promoted&&(contradicted||candidate.reason.startsWith("Given name")))all.remove(candidate);
             else if(!promoted){int index=all.indexOf(candidate);if(index>=0)all.set(index,new LiveTracker.Detection(candidate.id,candidate.label,
                     candidate.reason+" · reread inconclusive",candidate.quad,false));}
